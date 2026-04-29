@@ -131,7 +131,7 @@ process FREEBAYES_CALL_LIB {
 
     script:
     def args = task.ext.args ?: ''
-    def maxInnerThreads = (params.caller_inner_threads ?: 4) as Integer
+    def maxInnerThreads = (params.caller_inner_threads ?: 8) as Integer
     def threads = Math.max(1, Math.min((task.cpus ?: 1) as Integer, maxInnerThreads))
     def unitId = meta.unit_id ?: meta.library ?: meta.id
     """

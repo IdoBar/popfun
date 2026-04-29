@@ -4,7 +4,7 @@ include { DECOMPRESS_FASTA; SAMTOOLS_FAIDX; GATK_DICTIONARY; BWA_INDEX; BOWTIE2_
 include { GFF_TO_BED } from '../modules/local/annotation_prep'
 include { FREEBAYES_SPLIT_REGIONS } from '../modules/local/genome_regions'
 include { SAMTOOLS_MERGE; MARK_DUPLICATES; MARK_DUPLICATES_BAMSORMADUP; MARK_DUPLICATES_SAMBAMBA; MARK_DUPLICATES_FASTDUP; QUALIMAP } from '../modules/local/bam_tools'
-include { FREEBAYES_POPULATION; FREEBAYES; GATK_HAPLOTYPECALLER; GATK_COMBINEGVCFS; GATK_GENOTYPEGVCFS } from '../modules/local/variant_callers'
+include { FREEBAYES_POPULATION; FREEBAYES; FREEBAYES_GVCF; GATK_HAPLOTYPECALLER; GATK_COMBINEGVCFS; GATK_GENOTYPEGVCFS; GLNEXUS_COHORT } from '../modules/local/variant_callers'
 include { BCFTOOLS_MERGE; BCFTOOLS_CONCAT } from '../modules/local/vcf_tools'
 include { GENERATE_SOFTWARE_VERSIONS_MQC; MULTIQC } from '../modules/local/multiqc'
 include { POPGEN_ANALYSES } from '../modules/local/popgen'
@@ -19,6 +19,7 @@ workflow HAPFUN {
     def valid_start_steps = ['qc', 'alignment']
     def valid_stop_steps = ['qc', 'alignment', 'call', 'filter', 'multiqc']
     def valid_markdup_tools = ['gatk', 'bamsormadup', 'sambamba', 'fastdup']
+    def valid_gvcf_joint_callers = ['gatk', 'glnexus']
 
     if (!valid_start_steps.contains(params.start_step)) {
         error "Invalid --start_step '${params.start_step}'. Supported values: ${valid_start_steps.join(', ')}"
@@ -28,6 +29,12 @@ workflow HAPFUN {
     }
     if (!valid_markdup_tools.contains(params.markdup_tool)) {
         error "Invalid --markdup_tool '${params.markdup_tool}'. Supported values: ${valid_markdup_tools.join(', ')}"
+    }
+    if (!valid_gvcf_joint_callers.contains(params.gvcf_joint_caller)) {
+        error "Invalid --gvcf_joint_caller '${params.gvcf_joint_caller}'. Supported values: ${valid_gvcf_joint_callers.join(', ')}"
+    }
+    if (params.caller == 'freebayes' && params.gvcf_joint_caller == 'glnexus' && params.freebayes_mode == 'population') {
+        error "--gvcf_joint_caller glnexus with --caller freebayes requires --freebayes_mode individual so per-sample gVCFs can be generated"
     }
     if ((params.freebayes_chunk_size as Integer) < 1) {
         error "Invalid --freebayes_chunk_size '${params.freebayes_chunk_size}'. Value must be >= 1"
@@ -277,14 +284,19 @@ workflow HAPFUN {
         ch_gvcfs = GATK_HAPLOTYPECALLER.out.gvcf.map { meta, gvcf, tbi -> gvcf }.collect()
         ch_tbis  = GATK_HAPLOTYPECALLER.out.gvcf.map { meta, gvcf, tbi -> tbi }.collect()
         
-        // 3. Combine gVCFs
-        GATK_COMBINEGVCFS(ch_gvcfs, ch_tbis, ch_ref, ch_ref_fai, ch_ref_dict)
-        
-        // 4. Joint Genotype the cohort
-        GATK_GENOTYPEGVCFS(GATK_COMBINEGVCFS.out.gvcf, GATK_COMBINEGVCFS.out.tbi, ch_ref, ch_ref_fai, ch_ref_dict)
-        
-        // 5. Package for filtering
-        ch_final_vcf = GATK_GENOTYPEGVCFS.out.vcf.map { vcf -> tuple([id: "gatk_joint"], vcf) }
+        if (params.gvcf_joint_caller == 'glnexus') {
+            GLNEXUS_COHORT(ch_gvcfs, ch_tbis)
+            ch_final_vcf = GLNEXUS_COHORT.out.vcf.map { vcf -> tuple([id: "glnexus_joint"], vcf) }
+        } else {
+            // 3. Combine gVCFs
+            GATK_COMBINEGVCFS(ch_gvcfs, ch_tbis, ch_ref, ch_ref_fai, ch_ref_dict)
+
+            // 4. Joint Genotype the cohort
+            GATK_GENOTYPEGVCFS(GATK_COMBINEGVCFS.out.gvcf, GATK_COMBINEGVCFS.out.tbi, ch_ref, ch_ref_fai, ch_ref_dict)
+
+            // 5. Package for filtering
+            ch_final_vcf = GATK_GENOTYPEGVCFS.out.vcf.map { vcf -> tuple([id: "gatk_joint"], vcf) }
+        }
         
     } else if (params.caller == 'freebayes' && params.freebayes_mode == 'population') {
         // Collect cohort BAM/BAI files into separate channels.
@@ -338,10 +350,21 @@ workflow HAPFUN {
         ch_final_vcf = BCFTOOLS_CONCAT.out.vcf.map { vcf -> tuple([id: "population"], vcf) }
         
     } else {
-        // Fallback: Individual Freebayes calling & standard merging
-        FREEBAYES(ch_dedup_bam_for_call, ch_ref, ch_ref_fai)
-        BCFTOOLS_MERGE(FREEBAYES.out.vcf.collect(), FREEBAYES.out.tbi.collect())
-        ch_final_vcf = BCFTOOLS_MERGE.out.vcf.map { vcf -> tuple([id: "merged"], vcf) }
+        if (params.gvcf_joint_caller == 'glnexus') {
+            // Freebayes + GLNexus path: emit per-sample gVCFs then cohort genotype with GLNexus.
+            FREEBAYES_GVCF(ch_dedup_bam_for_call, ch_ref, ch_ref_fai)
+
+            ch_freebayes_gvcfs = FREEBAYES_GVCF.out.gvcf.map { meta, gvcf, tbi -> gvcf }.collect()
+            ch_freebayes_tbis  = FREEBAYES_GVCF.out.gvcf.map { meta, gvcf, tbi -> tbi }.collect()
+
+            GLNEXUS_COHORT(ch_freebayes_gvcfs, ch_freebayes_tbis)
+            ch_final_vcf = GLNEXUS_COHORT.out.vcf.map { vcf -> tuple([id: "glnexus_joint"], vcf) }
+        } else {
+            // Fallback: Individual Freebayes calling & standard merging
+            FREEBAYES(ch_dedup_bam_for_call, ch_ref, ch_ref_fai)
+            BCFTOOLS_MERGE(FREEBAYES.out.vcf.collect(), FREEBAYES.out.tbi.collect())
+            ch_final_vcf = BCFTOOLS_MERGE.out.vcf.map { vcf -> tuple([id: "merged"], vcf) }
+        }
     }
 
     if (params.stop_at == 'call') { return }

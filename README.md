@@ -35,6 +35,8 @@ By default, **HapFun** performs the following steps:
     * *Supports Freebayes population-level calling, or individual sample calling + merging.*
     * *Population mode can split chromosomes into multiple sub-regions for finer `freebayes-parallel` fan-out using fixed-size chunks from `fasta_generate_regions.py`.*
     * *After global region generation, per-chromosome region files are produced so each population shard remains chromosome-scoped for concatenation.*
+    * *Alternative cohort-scale gVCF genotyping via `glnexus_cli` is available with `--gvcf_joint_caller glnexus`.*
+    * *When using `--gvcf_joint_caller glnexus` with `--caller freebayes`, HapFun switches Freebayes to per-sample gVCF output and auto-selects the GLNexus preset via `glnexus_cli --config` according to gVCF source (`gatk` or `freebayes`).*
 7. **Error Estimation (Optional)**: If `--error_estimate true` is flagged, the pipeline automatically separates replicate libraries, calls variants on them independently, and calculates genotype discordance rates using a custom Python module. The raw per-library VCFs used in this comparison are also retained in `results/variants/error_estimate_libraries/`.
 8. **Population Genetics (Optional)**: If `--popgen true`, HapFun performs PCA (PC1-PC3) and constructs a phylogenetic tree from the final cohort VCF (regardless of variant caller and calling mode), then adds both panels to MultiQC. If a `pop` column is present in the samplesheet, it is used to color PCA markers and tree nodes.
 9. **Variant Filtering**: Strictly filters VCFs based on Depth (DP), Quality (QUAL), and polymorphism, while recalculating INFO tags (`bcftools +fill-tags`). Outputs distinct `.snps.vcf` and `.indels.vcf` files.
@@ -68,6 +70,12 @@ By default, **HapFun** performs the following steps:
 
     *Swap `-profile conda` with `-profile docker` or `-profile singularity` or `-profile apptainer` depending on your environment.*
 
+    **Quick test run** (using bundled test data):
+
+    ```bash
+        nextflow run main.nf -profile test,conda
+    ```
+
 ## Advanced Usage
 
 HapFun allows you to bypass expensive indexing steps by providing pre-built directories, and allows fine-grained control over tool arguments.
@@ -100,9 +108,12 @@ HapFun allows you to bypass expensive indexing steps by providing pre-built dire
 * `--trimmer`: `fastp` (default) or `trimmomatic`
 * `--aligner`: `bwa-mem2` (default) or `bowtie2`
 * `--caller`: `freebayes` (default) or `gatk`
+* `--gvcf_joint_caller`: Cohort genotyper for per-sample gVCFs: `gatk` (default) or `glnexus`.
+* `--glnexus_config`: Optional override value passed to `glnexus_cli --config` when `--gvcf_joint_caller glnexus` is used. If omitted, HapFun auto-selects based on gVCF source (`gatk` or `freebayes`).
 * `--markdup_tool`: `bamsormadup` (default), `gatk`, `sambamba`, or `fastdup`
 * `--freebayes_mode`: `population` (default) or `individual`
-* `--freebayes_chunk_size`: Chunk size passed to `fasta_generate_regions.py` for splitting genomic regions in Freebayes population-mode. (Default: `500000`).
+* `--freebayes_chunk_size`: Chunk size passed to `fasta_generate_regions.py` for splitting genomic regions in Freebayes population-mode. (Default: `100000`).
+    *Note: Freebayes population mode can be time-intensive for large cohorts (roughly >200 samples, depending on sequencing depth).*
 * `--error_estimate`: `false` (default) or `true`
 * `--popgen`: Run population genetics module (PCA + phylogenetic tree) from final cohort VCF and add to MultiQC (Default: `false`).
 * `--popgen_tree_method`: Tree construction method for population genetics (`upgma`, `nj`, `ml`, or `bayesian`, Default: `upgma`).
@@ -117,7 +128,10 @@ HapFun allows you to bypass expensive indexing steps by providing pre-built dire
 * `--bowtie2_args`: Additional arguments passed to Bowtie2 (Default: empty).
 * `--gatk_args`: Additional arguments passed to GATK HaplotypeCaller (Default: empty).
 * `--freebayes_args`: Additional arguments passed to Freebayes (Default: `--genotype-qualities`). Keep this flag enabled so `GQ` fields are emitted for downstream genotype-based filtering. In population mode, these arguments are forwarded to each chromosome-level `freebayes-parallel` task.
-* `--caller_inner_threads`: Maximum within-task chromosome fan-out for `FREEBAYES`, `FREEBAYES_POPULATION`, and `GATK_HAPLOTYPECALLER` (Default: `4`). Effective threads per task are `min(task.cpus, caller_inner_threads)`.
+* `--glnexus_args`: Additional arguments passed to `glnexus_cli` (Default: empty).
+* `--caller_inner_threads`: Maximum within-task chromosome fan-out for `FREEBAYES`, `FREEBAYES_POPULATION`, and `GATK_HAPLOTYPECALLER` (Default: `8`). Effective threads per task are `min(task.cpus, caller_inner_threads)`.
+
+When `--gvcf_joint_caller glnexus` is enabled, HapFun applies GLNexus performance guidance for large cohorts by setting explicit thread/memory budgets, raising open-file limits, enabling NUMA interleave when available, and attempting `jemalloc` preload when it is present.
 
 **VCF Filtering:**
 
@@ -141,6 +155,9 @@ Upon completion, the `--outdir` will contain the following structured directorie
     ├── qc/                   # Individual QC reports (Fastp, FastQC, Qualimap, BCFtools)
     └── variants/
         ├── error_estimate_libraries/ # Raw per-library VCFs used for error-rate estimation (`--error_estimate true`)
+        ├── gvcfs/            # Per-sample Freebayes gVCFs when `--gvcf_joint_caller glnexus` with Freebayes
+        ├── gatk_gvcfs/       # Per-sample GATK gVCFs
+        ├── glnexus_cohort/   # GLNexus cohort-level joint-called VCF
         ├── individual/       # Raw per-sample VCFs (if using individual mode)
         ├── merged/           # Raw aggregated VCF (if using individual mode)
         ├── population/       # Raw aggregated VCF from chromosome-parallel Freebayes population mode
@@ -159,6 +176,7 @@ HapFun utilizes the following open-source tools via [Bioconda](https://bioconda.
 * [Sambamba](https://lomereiter.github.io/sambamba/) [1.0.1]
 * [FastDup](https://github.com/zzhofict/FastDup) [1.0.0]
 * [Freebayes](https://github.com/freebayes/freebayes) [1.3.10]
+* [GLNexus](https://github.com/dnanexus-rnd/GLnexus) [1.4.1]
 * [BEDOPS](https://bedops.readthedocs.io/en/latest/) [2.4.42] (gff2bed)
 * [Qualimap](http://qualimap.conesalab.org/) [2.3]
 * [MultiQC](https://multiqc.info/) [1.33]

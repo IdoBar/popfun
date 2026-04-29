@@ -24,6 +24,22 @@
           "default": "ILLUMINACLIP:TruSeq3-PE.fa:2:30:10 LEADING:3 TRAILING:3 SLIDINGWINDOW:4:15 MINLEN:36"},
         "aligner": { "type": "string", "enum": ["bwa-mem2", "bowtie2"], "default": "bwa-mem2" },
         "caller": { "type": "string", "enum": ["gatk", "freebayes"], "default": "freebayes" },
+        "gvcf_joint_caller": {
+          "type": "string",
+          "enum": ["gatk", "glnexus"],
+          "default": "gatk",
+          "description": "Cohort genotyper used when combining per-sample gVCFs. 'gatk' uses CombineGVCFs + GenotypeGVCFs, while 'glnexus' uses glnexus_cli."
+        },
+        "glnexus_config": {
+          "type": "string",
+          "default": "",
+          "description": "Optional override passed to glnexus_cli --config when --gvcf_joint_caller glnexus is used. If empty, HapFun auto-selects from gVCF origin (gatk or freebayes)."
+        },
+        "glnexus_args": {
+          "type": "string",
+          "default": "",
+          "description": "Additional arguments passed directly to glnexus_cli."
+        },
         "markdup_tool": {
           "type": "string",
           "enum": ["gatk", "bamsormadup", "sambamba", "fastdup"],
@@ -33,7 +49,7 @@
         "freebayes_mode": { "type": "string", "enum": ["individual", "population"], "default": "population" },
         "freebayes_chunk_size": {
           "type": "integer",
-          "default": 500000,
+          "default": 100000,
           "minimum": 1,
           "description": "Chunk size passed to fasta_generate_regions.py for Freebayes population-mode sharding."
         },
@@ -44,7 +60,7 @@
         },
         "caller_inner_threads": {
           "type": "integer",
-          "default": 4,
+          "default": 8,
           "minimum": 1,
           "description": "Maximum within-task chromosome parallelism for FREEBAYES, FREEBAYES_POPULATION, and GATK_HAPLOTYPECALLER. Effective value per task is min(task.cpus, caller_inner_threads)."
         }
