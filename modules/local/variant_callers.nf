@@ -198,9 +198,9 @@ process GLNEXUS_COHORT {
     # Auto-select the GLNexus preset from gVCF origin unless user overrides with --glnexus_config.
     SELECTED_CONFIG="${glnexusConfig}"
 
-    if glnexus_cli --help 2>&1 | grep -qi "\<\${SELECTED_CONFIG}\>"; then
+    if glnexus_cli --help 2>&1 | grep -qi "\\<\${SELECTED_CONFIG}\\>"; then
         echo "Using GLNexus preset: \${SELECTED_CONFIG}" >&2
-    elif [ "\${SELECTED_CONFIG}" = "freebayes" ] && glnexus_cli --help 2>&1 | grep -qi "\<gatk\>"; then
+    elif [ "\${SELECTED_CONFIG}" = "freebayes" ] && glnexus_cli --help 2>&1 | grep -qi "\\<gatk\\>"; then
         echo "WARNING: GLNexus preset 'freebayes' not found in this build. Falling back to 'gatk'. Set --glnexus_config to override." >&2
         SELECTED_CONFIG="gatk"
     else

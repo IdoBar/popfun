@@ -9,9 +9,9 @@
       "title": "Input/output options",
       "type": "object",
       "properties": {
-        "input": { "type": "string", "default": "assets/samplesheet.csv" },
+        "input": { "type": "string", "default": "" },
         "outdir": { "type": "string", "default": "results" },
-        "ref": { "type": "string", "default": "data/ref.fa" }
+        "ref": { "type": "string", "default": "" }
       },
       "required": ["input", "ref"]
     },

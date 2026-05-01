@@ -42,6 +42,10 @@ Please cite the workflow framework and relevant software used in your analysis.
 
 > McKenna, A., Hanna, M., Banks, E., Sivachenko, A., Cibulskis, K., Kernytsky, A., ... DePristo, M. A. (2010). The Genome Analysis Toolkit: A MapReduce framework for analyzing next-generation DNA sequencing data. Genome Research, 20(9), 1297-1303. doi:10.1101/gr.107524.110
 
+### [GLNexus](https://github.com/dnanexus-rnd/GLnexus)
+
+> Lin, M. F., Rodeh, O., Penn, J., Bai, X., Reid, J. G., Krasheninina, O., & Salerno, W. J. (2018). GLnexus: joint variant calling for large cohort sequencing. bioRxiv. doi:10.1101/343970
+
 ### [Sambamba](https://lomereiter.github.io/sambamba/)
 
 > Tarasov, A., Vilella, A. J., Cuppen, E., Nijman, I. J., & Prins, P. (2015). Sambamba: fast processing of NGS alignment formats. Bioinformatics, 31(12), 2032-2034. doi:10.1093/bioinformatics/btv098
@@ -70,7 +74,7 @@ Please cite the workflow framework and relevant software used in your analysis.
 
 > Ewels, P., Magnusson, M., Lundin, S., & Kaller, M. (2016). MultiQC: Summarize analysis results for multiple tools and samples in a single report. Bioinformatics, 32(19), 3047-3048. doi:10.1093/bioinformatics/btw354
 
-### [IQ-TREE / IQ-TREE 2](http://www.iqtree.org/)
+### [IQ-TREE/IQ-TREE2](http://www.iqtree.org/)
 
 > Nguyen, L.-T., Schmidt, H. A., von Haeseler, A., & Minh, B. Q. (2015). IQ-TREE: A fast and effective stochastic algorithm for estimating maximum-likelihood phylogenies. Molecular Biology and Evolution, 32(1), 268-274. doi:10.1093/molbev/msu300
 >
