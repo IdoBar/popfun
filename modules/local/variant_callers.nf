@@ -162,7 +162,7 @@ process FREEBAYES_GVCF {
 process GLNEXUS_COHORT {
     label 'mc_xlarge'
     conda "bioconda::glnexus=1.4.1 bioconda::bcftools=1.23.1 conda-forge::jemalloc"
-    container 'quay.io/biocontainers/glnexus:1.4.1--h9948957_5'
+    container 'quay.io/biocontainers/glnexus:1.4.1--h17e8430_5'
 
     input:
     path gvcfs
