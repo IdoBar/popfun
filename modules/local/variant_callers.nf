@@ -184,7 +184,7 @@ process GLNEXUS_COHORT {
     # GLNexus performance tuning for large cohorts.
     ulimit -Sn 65536 || true
 
-    if [ -z "\${LD_PRELOAD}" ]; then
+    if [ -z "\${LD_PRELOAD:-}" ]; then
         for jem in /usr/lib/x86_64-linux-gnu/libjemalloc.so /usr/lib64/libjemalloc.so /usr/lib/libjemalloc.so; do
             if [ -f "\${jem}" ]; then
                 export LD_PRELOAD="\${jem}"
