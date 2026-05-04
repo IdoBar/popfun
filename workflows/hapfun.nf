@@ -44,7 +44,26 @@ workflow HAPFUN {
     }
     
     // 1. INPUT PARSING
-    ch_input = Channel.fromPath(params.input).splitCsv(header:true).map { row ->
+    def samplesheet_file = file(params.input)
+    def samplesheet_dir = samplesheet_file.parent
+    def resolve_input_file = { String p, String rowPreview, String colName ->
+        def candidates = [
+            p,
+            "${projectDir}/${p}",
+            "${samplesheet_dir}/${p}"
+        ].unique()
+
+        for (candidate in candidates) {
+            def candidate_file = file(candidate)
+            if (candidate_file.toFile().exists()) {
+                return candidate_file
+            }
+        }
+
+        error "Could not resolve '${colName}' path '${p}' from samplesheet row: ${rowPreview}. Tried: ${candidates.join(', ')}"
+    }
+
+    ch_input = Channel.fromPath(samplesheet_file).splitCsv(header:true).map { row ->
         def norm = row.collectEntries { key, value ->
             def normKey = key == null ? null : key.toString().trim().toLowerCase()
             def normValue = value == null ? '' : value.toString().trim()
@@ -67,10 +86,13 @@ workflow HAPFUN {
             error "Samplesheet row is missing required 'fq1'/'fq2' value: ${rowPreview}"
         }
 
+        def fq1File = resolve_input_file(fq1, rowPreview, 'fq1')
+        def fq2File = resolve_input_file(fq2, rowPreview, 'fq2')
+
         def meta = [ id: sampleId, library: libraryId, unit_id: libraryId, pop: (norm.pop ?: 'NA'), single_end: false ]
-        tuple(meta, file(fq1), file(fq2))
+        tuple(meta, fq1File, fq2File)
     }
-    ch_samplesheet = Channel.value(file(params.input))
+    ch_samplesheet = Channel.value(samplesheet_file)
     
     def ref_file = file(params.ref)
     def ref_is_gz = ref_file.name.toLowerCase().endsWith('.gz')
