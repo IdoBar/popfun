@@ -33,8 +33,8 @@ workflow HAPFUN {
     if (!valid_gvcf_joint_callers.contains(params.gvcf_joint_caller)) {
         error "Invalid --gvcf_joint_caller '${params.gvcf_joint_caller}'. Supported values: ${valid_gvcf_joint_callers.join(', ')}"
     }
-    if (params.caller == 'freebayes' && params.gvcf_joint_caller == 'glnexus' && params.freebayes_mode == 'population') {
-        error "--gvcf_joint_caller glnexus with --caller freebayes requires --freebayes_mode individual so per-sample gVCFs can be generated"
+    if (params.caller == 'freebayes' && params.gvcf_joint_caller == 'glnexus') {
+        error "Unsupported parameter combination: --caller freebayes with --gvcf_joint_caller glnexus. This GLNexus build does not provide a freebayes preset. Use --gvcf_joint_caller gatk, or choose a different caller with GLNexus."
     }
     if ((params.freebayes_chunk_size as Integer) < 1) {
         error "Invalid --freebayes_chunk_size '${params.freebayes_chunk_size}'. Value must be >= 1"
@@ -373,7 +373,7 @@ workflow HAPFUN {
         
     } else {
         if (params.gvcf_joint_caller == 'glnexus') {
-            // Freebayes + GLNexus path: emit per-sample gVCFs then cohort genotype with GLNexus.
+            // GLNexus cohort genotyping path (for supported caller combinations only).
             FREEBAYES_GVCF(ch_dedup_bam_for_call, ch_ref, ch_ref_fai)
 
             ch_freebayes_gvcfs = FREEBAYES_GVCF.out.gvcf.map { meta, gvcf, tbi -> gvcf }.collect()

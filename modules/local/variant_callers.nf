@@ -177,7 +177,7 @@ process GLNEXUS_COHORT {
     script:
     def args = task.ext.args ?: ''
     def requestedConfig = (params.glnexus_config ?: '').toString().trim()
-    def autoConfig = (params.caller == 'freebayes') ? 'freebayes' : 'gatk'
+    def autoConfig = 'gatk'
     def glnexusConfig = requestedConfig ?: autoConfig
     def threads = Math.max(1, (task.cpus ?: 1) as Integer)
     def memGb = Math.max(1, (task.memory?.toGiga() ?: 8) as Integer)
@@ -198,15 +198,7 @@ process GLNEXUS_COHORT {
 
     # Auto-select the GLNexus preset from gVCF origin unless user overrides with --glnexus_config.
     SELECTED_CONFIG="${glnexusConfig}"
-
-    if glnexus_cli --help 2>&1 | grep -qi "\\<\${SELECTED_CONFIG}\\>"; then
-        echo "Using GLNexus preset: \${SELECTED_CONFIG}" >&2
-    elif [ "\${SELECTED_CONFIG}" = "freebayes" ] && glnexus_cli --help 2>&1 | grep -qi "\\<gatk\\>"; then
-        echo "WARNING: GLNexus preset 'freebayes' not found in this build. Falling back to 'gatk'. Set --glnexus_config to override." >&2
-        SELECTED_CONFIG="gatk"
-    else
-        echo "Requested/auto GLNexus preset '\${SELECTED_CONFIG}' not reported by glnexus_cli --help. Proceeding anyway." >&2
-    fi
+    echo "Using GLNexus preset: \${SELECTED_CONFIG}" >&2
 
     if command -v numactl >/dev/null 2>&1; then
         numactl --interleave=all glnexus_cli --config \${SELECTED_CONFIG} --threads ${threads} --mem-gbytes ${memGb} --list gvcf_list.txt ${args} > joint_called.bcf
