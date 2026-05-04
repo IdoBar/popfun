@@ -162,16 +162,17 @@ process FREEBAYES_GVCF {
 process GLNEXUS_COHORT {
     label 'mc_xlarge'
     conda "bioconda::glnexus=1.4.1 bioconda::bcftools=1.23.1 conda-forge::jemalloc"
-    // mulled container ships both glnexus_cli (1.4.1) and bcftools/bgzip (htslib)
-    container 'quay.io/biocontainers/mulled-v2-40686ae2bb19a68378dcd62e3f4c2e5c96c4e981:8c60e84ae3bb6a64d24c7a2bd79b6e10c82d9d78-0'
+    // Official GLnexus image; ships only glnexus_cli. Output raw BCF so no
+    // bgzip/bcftools is needed inside this container. Downstream bcftools
+    // processes handle BCF transparently.
+    container 'ghcr.io/dnanexus-rnd/glnexus:v1.4.3'
 
     input:
     path gvcfs
     path tbis
 
     output:
-    path "joint_called.vcf.gz", emit: vcf
-    path "joint_called.vcf.gz.tbi", emit: tbi
+    path "joint_called.bcf", emit: vcf
 
     script:
     def args = task.ext.args ?: ''
@@ -180,7 +181,6 @@ process GLNEXUS_COHORT {
     def glnexusConfig = requestedConfig ?: autoConfig
     def threads = Math.max(1, (task.cpus ?: 1) as Integer)
     def memGb = Math.max(1, (task.memory?.toGiga() ?: 8) as Integer)
-    def compressionThreads = Math.max(1, Math.min(8, threads))
     """
     # GLNexus performance tuning for large cohorts.
     ulimit -Sn 65536 || true
@@ -208,14 +208,10 @@ process GLNEXUS_COHORT {
         echo "Requested/auto GLNexus preset '\${SELECTED_CONFIG}' not reported by glnexus_cli --help. Proceeding anyway." >&2
     fi
 
-    GLNEXUS_CMD="glnexus_cli --config \${SELECTED_CONFIG} --threads ${threads} --mem-gbytes ${memGb} --list gvcf_list.txt ${args}"
-
     if command -v numactl >/dev/null 2>&1; then
-        numactl --interleave=all sh -c "\${GLNEXUS_CMD}" | bcftools view --no-version -Oz --threads ${compressionThreads} > joint_called.vcf.gz
+        numactl --interleave=all glnexus_cli --config \${SELECTED_CONFIG} --threads ${threads} --mem-gbytes ${memGb} --list gvcf_list.txt ${args} > joint_called.bcf
     else
-        sh -c "\${GLNEXUS_CMD}" | bcftools view --no-version -Oz --threads ${compressionThreads} > joint_called.vcf.gz
+        glnexus_cli --config \${SELECTED_CONFIG} --threads ${threads} --mem-gbytes ${memGb} --list gvcf_list.txt ${args} > joint_called.bcf
     fi
-
-    tabix -f -p vcf joint_called.vcf.gz
     """
 }
