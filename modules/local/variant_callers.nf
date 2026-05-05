@@ -176,9 +176,6 @@ process GLNEXUS_COHORT {
 
     script:
     def args = task.ext.args ?: ''
-    def requestedConfig = (params.glnexus_config ?: '').toString().trim()
-    def autoConfig = 'gatk'
-    def glnexusConfig = requestedConfig ?: autoConfig
     def threads = Math.max(1, (task.cpus ?: 1) as Integer)
     def memGb = Math.max(1, (task.memory?.toGiga() ?: 8) as Integer)
     """
@@ -196,8 +193,8 @@ process GLNEXUS_COHORT {
 
     printf '%s\n' $gvcfs > gvcf_list.txt
 
-    # Auto-select the GLNexus preset from gVCF origin unless user overrides with --glnexus_config.
-    SELECTED_CONFIG="${glnexusConfig}"
+    # HapFun supports GLNexus only for GATK gVCFs.
+    SELECTED_CONFIG="gatk"
     echo "Using GLNexus preset: \${SELECTED_CONFIG}" >&2
 
     if command -v numactl >/dev/null 2>&1; then

@@ -30,11 +30,6 @@
           "default": "gatk",
           "description": "Cohort genotyper used when combining per-sample gVCFs. 'gatk' uses CombineGVCFs + GenotypeGVCFs, while 'glnexus' uses glnexus_cli."
         },
-        "glnexus_config": {
-          "type": "string",
-          "default": "",
-          "description": "Optional override passed to glnexus_cli --config when --gvcf_joint_caller glnexus is used. If empty, HapFun auto-selects from gVCF origin (gatk or freebayes)."
-        },
         "glnexus_args": {
           "type": "string",
           "default": "",

@@ -36,7 +36,7 @@ By default, **HapFun** performs the following steps:
     * *Population mode can split chromosomes into multiple sub-regions for finer `freebayes-parallel` fan-out using fixed-size chunks from `fasta_generate_regions.py`.*
     * *After global region generation, per-chromosome region files are produced so each population shard remains chromosome-scoped for concatenation.*
     * *Alternative cohort-scale gVCF genotyping via `glnexus_cli` is available with `--gvcf_joint_caller glnexus`.*
-    * *When using `--gvcf_joint_caller glnexus` with `--caller freebayes`, HapFun switches Freebayes to per-sample gVCF output and auto-selects the GLNexus preset via `glnexus_cli --config` according to gVCF source (`gatk` or `freebayes`).*
+    * *GLNexus mode is supported for GATK gVCFs. The combination `--caller freebayes --gvcf_joint_caller glnexus` is not supported.*
 7. **Error Estimation (Optional)**: If `--error_estimate true` is flagged, the pipeline automatically separates replicate libraries, calls variants on them independently, and calculates genotype discordance rates using a custom Python module. The raw per-library VCFs used in this comparison are also retained in `results/variants/error_estimate_libraries/`.
 8. **Population Genetics (Optional)**: If `--popgen true`, HapFun performs PCA (PC1-PC3) and constructs a phylogenetic tree from the final cohort VCF (regardless of variant caller and calling mode), then adds both panels to MultiQC. If a `pop` column is present in the samplesheet, it is used to color PCA markers and tree nodes.
 9. **Variant Filtering**: Strictly filters VCFs based on Depth (DP), Quality (QUAL), and polymorphism, while recalculating INFO tags (`bcftools +fill-tags`). Outputs distinct `.snps.vcf` and `.indels.vcf` files.
@@ -109,7 +109,6 @@ HapFun allows you to bypass expensive indexing steps by providing pre-built dire
 * `--aligner`: `bwa-mem2` (default) or `bowtie2`
 * `--caller`: `freebayes` (default) or `gatk`
 * `--gvcf_joint_caller`: Cohort genotyper for per-sample gVCFs: `gatk` (default) or `glnexus`.
-* `--glnexus_config`: Optional override value passed to `glnexus_cli --config` when `--gvcf_joint_caller glnexus` is used. If omitted, HapFun auto-selects based on gVCF source (`gatk` or `freebayes`).
 * `--markdup_tool`: `bamsormadup` (default), `gatk`, `sambamba`, or `fastdup`
 * `--freebayes_mode`: `population` (default) or `individual`
 * `--freebayes_chunk_size`: Chunk size passed to `fasta_generate_regions.py` for splitting genomic regions in Freebayes population-mode. (Default: `100000`).
@@ -155,7 +154,6 @@ Upon completion, the `--outdir` will contain the following structured directorie
     ├── qc/                   # Individual QC reports (Fastp, FastQC, Qualimap, BCFtools)
     └── variants/
         ├── error_estimate_libraries/ # Raw per-library VCFs used for error-rate estimation (`--error_estimate true`)
-        ├── gvcfs/            # Per-sample Freebayes gVCFs when `--gvcf_joint_caller glnexus` with Freebayes
         ├── gatk_gvcfs/       # Per-sample GATK gVCFs
         ├── glnexus_cohort/   # GLNexus cohort-level joint-called VCF
         ├── individual/       # Raw per-sample VCFs (if using individual mode)
