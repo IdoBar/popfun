@@ -131,8 +131,7 @@ process FREEBAYES_CALL_LIB {
 
     script:
     def args = task.ext.args ?: ''
-    def maxInnerThreads = (params.caller_inner_threads ?: 4) as Integer
-    def threads = Math.max(1, Math.min((task.cpus ?: 1) as Integer, maxInnerThreads))
+    def threads = Math.max(1, (task.cpus ?: 1) as Integer)
     def unitId = meta.unit_id ?: meta.library ?: meta.id
     """
     awk '{ print \$1 ":1-" \$2 }' $ref_idx > chromosome_regions.txt

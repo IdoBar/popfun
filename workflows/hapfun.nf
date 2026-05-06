@@ -5,7 +5,7 @@ include { GFF_TO_BED } from '../modules/local/annotation_prep'
 include { FREEBAYES_SPLIT_REGIONS } from '../modules/local/genome_regions'
 include { SAMTOOLS_MERGE; MARK_DUPLICATES; MARK_DUPLICATES_BAMSORMADUP; MARK_DUPLICATES_SAMBAMBA; MARK_DUPLICATES_FASTDUP; QUALIMAP } from '../modules/local/bam_tools'
 include { FREEBAYES_POPULATION; FREEBAYES; GATK_HAPLOTYPECALLER; GATK_COMBINEGVCFS; GATK_GENOTYPEGVCFS } from '../modules/local/variant_callers'
-include { BCFTOOLS_MERGE; BCFTOOLS_CONCAT } from '../modules/local/vcf_tools'
+include { BCFTOOLS_MERGE; BCFTOOLS_CONCAT; VCF_ENSEMBLE_COMBINE } from '../modules/local/vcf_tools'
 include { GENERATE_SOFTWARE_VERSIONS_MQC; MULTIQC } from '../modules/local/multiqc'
 include { POPGEN_ANALYSES } from '../modules/local/popgen'
 include { MARK_DUPLICATES_LIB; MARK_DUPLICATES_LIB_BAMSORMADUP; MARK_DUPLICATES_LIB_SAMBAMBA; MARK_DUPLICATES_LIB_FASTDUP; GATK_CALL_LIB; FREEBAYES_CALL_LIB; VCF_MULTI_COMPARE as VCF_MULTI_COMPARE_RAW; VCF_MULTI_COMPARE as VCF_MULTI_COMPARE_FILTERED; VCF_DISCORDANCE_MQC } from '../modules/local/error_tools'
@@ -19,6 +19,7 @@ workflow HAPFUN {
     def valid_start_steps = ['qc', 'alignment']
     def valid_stop_steps = ['qc', 'alignment', 'call', 'filter', 'multiqc']
     def valid_markdup_tools = ['gatk', 'bamsormadup', 'sambamba', 'fastdup']
+    def valid_callers = ['freebayes', 'gatk', 'ensemble']
 
     if (!valid_start_steps.contains(params.start_step)) {
         error "Invalid --start_step '${params.start_step}'. Supported values: ${valid_start_steps.join(', ')}"
@@ -28,6 +29,15 @@ workflow HAPFUN {
     }
     if (!valid_markdup_tools.contains(params.markdup_tool)) {
         error "Invalid --markdup_tool '${params.markdup_tool}'. Supported values: ${valid_markdup_tools.join(', ')}"
+    }
+    if (!valid_callers.contains(params.caller)) {
+        error "Invalid --caller '${params.caller}'. Supported values: ${valid_callers.join(', ')}"
+    }
+    if (params.caller == 'ensemble' && params.freebayes_mode != 'population') {
+        error "--caller ensemble currently requires --freebayes_mode population"
+    }
+    if (params.caller == 'ensemble' && params.error_estimate) {
+        error "--caller ensemble is not supported with --error_estimate yet"
     }
     if ((params.freebayes_chunk_size as Integer) < 1) {
         error "Invalid --freebayes_chunk_size '${params.freebayes_chunk_size}'. Value must be >= 1"
@@ -337,6 +347,70 @@ workflow HAPFUN {
         BCFTOOLS_CONCAT(ch_population_concat_inputs)
         ch_final_vcf = BCFTOOLS_CONCAT.out.vcf.map { vcf -> tuple([id: "population"], vcf) }
         
+    } else if (params.caller == 'ensemble') {
+        // --- Freebayes population arm ---
+        ch_ens_population_bams = ch_dedup_bam_for_call
+            .map { meta, bam, bai -> bam }
+            .collect()
+            .map { bams -> [bams] }
+
+        ch_ens_population_bais = ch_dedup_bam_for_call
+            .map { meta, bam, bai -> bai }
+            .collect()
+            .map { bais -> [bais] }
+
+        FREEBAYES_SPLIT_REGIONS(
+            ch_ref_fai,
+            Channel.value(params.freebayes_chunk_size)
+        )
+
+        ch_ens_regions = FREEBAYES_SPLIT_REGIONS.out.regions
+            .flatten()
+            .map { region_file ->
+                def chrom = region_file.baseName.replaceAll(/\.regions$/, '')
+                tuple([id: "ens_fb_${chrom}"], region_file)
+            }
+
+        ch_ens_fb_jobs = ch_ens_regions
+            .combine(ch_ens_population_bams)
+            .combine(ch_ens_population_bais)
+            .combine(ch_ref)
+            .combine(ch_ref_fai)
+            .map { row ->
+                def meta = row[0]
+                def region_file = row[1]
+                def bams = row[2]
+                def bais = row[3]
+                def ref = row[4]
+                def ref_idx = row[5]
+                tuple(meta, region_file, bams, bais, ref, ref_idx)
+            }
+
+        FREEBAYES_POPULATION(ch_ens_fb_jobs)
+
+        ch_ens_fb_concat_inputs = FREEBAYES_POPULATION.out.vcf
+            .map { meta, vcf, tbi -> tuple(vcf, tbi) }
+            .toList()
+            .map { shards -> tuple(shards.collect { it[0] }, shards.collect { it[1] }) }
+
+        BCFTOOLS_CONCAT(ch_ens_fb_concat_inputs)
+
+        // --- GATK arm ---
+        GATK_HAPLOTYPECALLER(ch_dedup_bam_for_call, ch_ref, ch_ref_fai, ch_ref_dict)
+        ch_ens_gvcfs = GATK_HAPLOTYPECALLER.out.gvcf.map { meta, gvcf, tbi -> gvcf }.collect()
+        ch_ens_tbis  = GATK_HAPLOTYPECALLER.out.gvcf.map { meta, gvcf, tbi -> tbi }.collect()
+        GATK_COMBINEGVCFS(ch_ens_gvcfs, ch_ens_tbis, ch_ref, ch_ref_fai, ch_ref_dict)
+        GATK_GENOTYPEGVCFS(GATK_COMBINEGVCFS.out.gvcf, GATK_COMBINEGVCFS.out.tbi, ch_ref, ch_ref_fai, ch_ref_dict)
+
+        // --- Combine ---
+        VCF_ENSEMBLE_COMBINE(
+            GATK_GENOTYPEGVCFS.out.vcf,
+            GATK_GENOTYPEGVCFS.out.tbi,
+            BCFTOOLS_CONCAT.out.vcf,
+            BCFTOOLS_CONCAT.out.tbi
+        )
+        ch_final_vcf = VCF_ENSEMBLE_COMBINE.out.vcf.map { label, vcf, tbi -> tuple([id: label], vcf) }
+
     } else {
         // Fallback: Individual Freebayes calling & standard merging
         FREEBAYES(ch_dedup_bam_for_call, ch_ref, ch_ref_fai)

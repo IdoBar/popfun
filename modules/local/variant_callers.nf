@@ -12,8 +12,7 @@ process FREEBAYES {
         path "${meta.id}.vcf.gz.tbi", emit: tbi
     script:
     def args = task.ext.args ?: ''
-    def maxInnerThreads = (params.caller_inner_threads ?: 4) as Integer
-    def threads = Math.max(1, Math.min((task.cpus ?: 1) as Integer, maxInnerThreads))
+    def threads = Math.max(1, (task.cpus ?: 1) as Integer)
     """
     awk '{ print \$1 ":1-" \$2 }' $ref_idx > chromosome_regions.txt
 
@@ -33,8 +32,7 @@ process FREEBAYES_POPULATION {
         tuple val(meta), path("${meta.id}.vcf.gz"), path("${meta.id}.vcf.gz.tbi"), emit: vcf
     script:
     def args = task.ext.args ?: ''
-    def maxInnerThreads = (params.caller_inner_threads ?: 4) as Integer
-    def threads = Math.max(1, Math.min((task.cpus ?: 1) as Integer, maxInnerThreads))
+    def threads = Math.max(1, (task.cpus ?: 1) as Integer)
     """
     find -L . -type f -name '*.bam' | sort > bam_list.txt
     [ -s bam_list.txt ] || { echo 'No staged BAM inputs discovered for FREEBAYES_POPULATION' >&2; exit 1; }
@@ -62,8 +60,7 @@ process GATK_HAPLOTYPECALLER {
     script:
     def args = task.ext.args ?: ''
     def mem_per_job = Math.max(1, task.memory.toGiga().intdiv(task.cpus))
-    def maxInnerThreads = (params.caller_inner_threads ?: 4) as Integer
-    def threads = Math.max(1, Math.min((task.cpus ?: 1) as Integer, maxInnerThreads))
+    def threads = Math.max(1, (task.cpus ?: 1) as Integer)
     """
     export NF_REF="${ref}"
     export NF_BAM="${bam}"

@@ -23,7 +23,7 @@
         "trimmomatic_args": { "type": "string",
           "default": "ILLUMINACLIP:TruSeq3-PE.fa:2:30:10 LEADING:3 TRAILING:3 SLIDINGWINDOW:4:15 MINLEN:36"},
         "aligner": { "type": "string", "enum": ["bwa-mem2", "bowtie2"], "default": "bwa-mem2" },
-        "caller": { "type": "string", "enum": ["gatk", "freebayes"], "default": "freebayes" },
+        "caller": { "type": "string", "enum": ["gatk", "freebayes", "ensemble"], "default": "freebayes" },
         "markdup_tool": {
           "type": "string",
           "enum": ["gatk", "bamsormadup", "sambamba", "fastdup"],
@@ -33,7 +33,7 @@
         "freebayes_mode": { "type": "string", "enum": ["individual", "population"], "default": "population" },
         "freebayes_chunk_size": {
           "type": "integer",
-          "default": 500000,
+          "default": 100000,
           "minimum": 1,
           "description": "Chunk size passed to fasta_generate_regions.py for Freebayes population-mode sharding."
         },
@@ -42,11 +42,17 @@
           "default": "--genotype-qualities",
           "description": "Additional arguments passed to Freebayes. Includes --genotype-qualities by default so GQ fields are emitted for downstream filtering."
         },
-        "caller_inner_threads": {
+        "ensemble_numpass": {
           "type": "integer",
-          "default": 4,
+          "default": 2,
           "minimum": 1,
-          "description": "Maximum within-task chromosome parallelism for FREEBAYES, FREEBAYES_POPULATION, and GATK_HAPLOTYPECALLER. Effective value per task is min(task.cpus, caller_inner_threads)."
+          "description": "Minimum number of callers a variant must be supported by when --caller ensemble. Default 2 requires all callers (strict intersection for 2 callers)."
+        },
+        "ensemble_conflict_rule": {
+          "type": "string",
+          "enum": ["higher_qual"],
+          "default": "higher_qual",
+          "description": "How to resolve calls at the same site with different QUAL scores when --caller ensemble. 'higher_qual' keeps the record with the higher QUAL value."
         }
       }
     },
