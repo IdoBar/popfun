@@ -104,8 +104,7 @@ HapFun allows you to bypass expensive indexing steps by providing pre-built dire
 * `--markdup_tool`: `bamsormadup` (default), `gatk`, `sambamba`, or `fastdup`
 * `--freebayes_mode`: `population` (default) or `individual`
 * `--freebayes_chunk_size`: Chunk size passed to `fasta_generate_regions.py` for splitting genomic regions in Freebayes population-mode. (Default: `100000`).
-* `--ensemble_numpass`: Minimum number of callers supporting a variant when `--caller ensemble` is used. Default `2` is a strict intersection of the two callers.
-* `--ensemble_conflict_rule`: Conflict resolution rule for shared sites in `--caller ensemble`. Default `higher_qual` keeps the caller record with the higher QUAL value.
+* `--caller ensemble` currently uses one fixed strategy: strict intersection of normalized GATK and Freebayes population calls, keeping the higher-QUAL record at each shared site.
 * `--error_estimate`: `false` (default) or `true`
 * `--popgen`: Run population genetics module (PCA + phylogenetic tree) from final cohort VCF and add to MultiQC (Default: `false`).
 * `--popgen_tree_method`: Tree construction method for population genetics (`upgma`, `nj`, `ml`, or `bayesian`, Default: `upgma`).

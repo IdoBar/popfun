@@ -54,14 +54,6 @@ process VCF_ENSEMBLE_COMBINE {
     output:
         tuple val('ensemble'), path('ensemble.vcf.gz'), path('ensemble.vcf.gz.tbi'), emit: vcf
     script:
-    def numpass = (params.ensemble_numpass ?: 2) as Integer
-    def conflictRule = (params.ensemble_conflict_rule ?: 'higher_qual').toString().trim()
-    if (numpass != 2) {
-        error "VCF_ENSEMBLE_COMBINE currently supports --ensemble_numpass 2 only. Got '${numpass}'."
-    }
-    if (conflictRule != 'higher_qual') {
-        error "VCF_ENSEMBLE_COMBINE currently supports --ensemble_conflict_rule higher_qual only. Got '${conflictRule}'."
-    }
     """
     set -euo pipefail
 
