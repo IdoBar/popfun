@@ -91,13 +91,15 @@ process VCF_ENSEMBLE_COMBINE {
     awk 'BEGIN{FS=OFS="\\t"} \$5 == "gatk" {print \$1, \$2, \$3, \$4}' winners.tsv > gatk.keep.tsv
     awk 'BEGIN{FS=OFS="\\t"} \$5 == "freebayes" {print \$1, \$2, \$3, \$4}' winners.tsv > freebayes.keep.tsv
 
-    bcftools view -h gatk.norm.vcf.gz | awk '
-        /^#CHROM/ {
-            print "##INFO=<ID=CALLERS,Number=.,Type=String,Description=\\\"Callers reporting this variant\\\">"
-            print "##INFO=<ID=NUM_CALLERS,Number=1,Type=Integer,Description=\\\"Number of callers supporting this variant\\\">"
-        }
-        { print }
-    ' > ensemble.header.vcf
+    {
+        {
+            bcftools view -h gatk.norm.vcf.gz | grep -v '^#CHROM'
+            bcftools view -h freebayes.norm.vcf.gz | grep -v '^#CHROM'
+        } | awk '!seen[\$0]++'
+        printf '##INFO=<ID=CALLERS,Number=.,Type=String,Description="Callers reporting this variant">\n'
+        printf '##INFO=<ID=NUM_CALLERS,Number=1,Type=Integer,Description="Number of callers supporting this variant">\n'
+        bcftools view -h gatk.norm.vcf.gz | awk '/^#CHROM/'
+    } > ensemble.header.vcf
 
     bcftools view -H gatk.norm.vcf.gz | awk 'BEGIN{FS=OFS="\\t"}
         NR==FNR { keep[\$1 FS \$2 FS \$3 FS \$4] = 1; next }
