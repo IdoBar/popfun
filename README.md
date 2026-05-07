@@ -128,7 +128,7 @@ PopFun allows you to bypass expensive indexing steps by providing pre-built dire
 
 Note: Genotype-based filtering relies on valid `GQ` fields. By default, PopFun enables Freebayes `--genotype-qualities` (via `--freebayes_args`) so genotype qualities are emitted and filtering behaves as expected.
 
-Note: `--freebayes_region_splitter bai` uses the vendored Freebayes `split_ref_by_bai_datasize.py` helper from `bin/` and runs it in a pinned lightweight `pottava/scipy` image, which provides the required NumPy and SciPy dependencies that are missing from the default Freebayes container/package.
+Note: `--freebayes_region_splitter bai` uses the vendored Freebayes `split_ref_by_bai_datasize.py` helper from `bin/` and runs it in PopFun's dedicated `ghcr.io/idobar/popfun-bai-splitter` image, which provides Bash plus the NumPy and SciPy dependencies missing from the default Freebayes container/package.
 
 Note: Chunk-size tuning depends on how regions are generated. With `--freebayes_region_splitter bai`, higher sequencing depth usually requires larger `--freebayes_cov_chunk` values to avoid producing too many tiny regions. With `--freebayes_region_splitter fai`, appropriate `--freebayes_chunk_size` values depend more on genome size and continuity; highly fragmented assemblies with thousands of contigs often work better with `bai` splitting than with `fai` splitting.
 
