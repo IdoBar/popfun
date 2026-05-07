@@ -30,7 +30,7 @@ process FREEBAYES {
     export NF_DIAG_DIR="${diagnosticsDir}"
 
     set +e
-    awk 'NF { printf "%s chunks/%08d.vcf\n", \$0, NR }' chromosome_regions.txt \
+    awk 'NF { printf "%s chunks/%08d.vcf\\n", \$0, NR }' chromosome_regions.txt \
         | xargs -r -n 2 -P ${threads} sh -c '
             region="\$1"
             chunk_vcf="\$2"
@@ -105,7 +105,7 @@ process FREEBAYES_POPULATION {
     export NF_DIAG_DIR="${diagnosticsDir}"
 
     set +e
-    awk 'NF { printf "%s chunks/%08d.vcf\n", \$0, NR }' $region_file \
+    awk 'NF { printf "%s chunks/%08d.vcf\\n", \$0, NR }' "$region_file" \
         | xargs -r -n 2 -P ${threads} sh -c '
             region="\$1"
             chunk_vcf="\$2"

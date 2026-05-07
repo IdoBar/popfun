@@ -52,6 +52,6 @@ For any pipeline logic change, validate at least:
 ## Practical Lessons from Prior Fixes
 
 - Many failures surfaced as secondary Nextflow exceptions after a process failed; always identify the first process error and exit code.
-- Many failures resulted from improper escaping of variables in Nextflow `script` blocks processed by Groovy. Make sure to escape variables properly to avoid issues or use Nextflow `shell` blocks as an alternative.
+- Many failures resulted from improper escaping of variables and newlines (`\n`) in Nextflow `script` blocks processed by Groovy. Make sure to escape variables properly (use `\\n` for newlines within `awk` scripts) to avoid issues or use Nextflow `shell` blocks as an alternative.
 - Relative samplesheet paths can resolve incorrectly if not anchored; workflow input resolution should check project-root and samplesheet-relative candidates.
-- Test runs on local `wsl` requires careful escaping of Windows paths and internal variables; prefer absolute paths and verify with `pwd` in the test profile.
+- Always run Nextflow validation test runs on local `wsl` (may need an active login to activate the `base` conda environment where Nextflow is installed) and make sure to escape Windows paths and internal variables properly; prefer absolute paths and verify with `pwd` in the test profile.

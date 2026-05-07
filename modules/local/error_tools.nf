@@ -162,7 +162,7 @@ process FREEBAYES_CALL_LIB {
     export NF_DIAG_DIR="${diagnosticsDir}"
 
     set +e
-    awk 'NF { printf "%s chunks/%08d.vcf\n", \$0, NR }' chromosome_regions.txt \
+    awk 'NF { printf "%s chunks/%08d.vcf\\n", \$0, NR }' chromosome_regions.txt \
         | xargs -r -n 2 -P ${threads} sh -c '
             region="\$1"
             chunk_vcf="\$2"
