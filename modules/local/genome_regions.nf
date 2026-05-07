@@ -26,8 +26,8 @@ process FREEBAYES_SPLIT_REGIONS {
 
 process FREEBAYES_SPLIT_REGIONS_BAI {
     label 'sc_small'
-    conda "conda-forge::python=3.11"
-    container 'quay.io/biocontainers/freebayes:1.3.10--hbefcdb2_0'
+    conda "conda-forge::python=3.11 conda-forge::numpy=1.23.5 conda-forge::scipy=1.10.1"
+    container 'docker.io/pottava/scipy@sha256:ff232851d853cb0afccc7d69cd7c8032a585cf8c9ee895a1dc40771f3808d98f'
     input:
         path ref_idx
         val target_data_size

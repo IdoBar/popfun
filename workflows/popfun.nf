@@ -31,6 +31,7 @@ workflow POPFUN {
     }
 
     def freebayesCovChunk = parseWholeNumberParam(params.freebayes_cov_chunk, 'freebayes_cov_chunk')
+    def freebayesMaxChunks = parseWholeNumberParam(params.freebayes_max_chunks, 'freebayes_max_chunks')
 
     if (!valid_start_steps.contains(params.start_step)) {
         error "Invalid --start_step '${params.start_step}'. Supported values: ${valid_start_steps.join(', ')}"
@@ -59,8 +60,33 @@ workflow POPFUN {
     if (freebayesCovChunk < 1) {
         error "Invalid --freebayes_cov_chunk '${params.freebayes_cov_chunk}'. Value must be >= 1"
     }
+    if (freebayesMaxChunks < 1) {
+        error "Invalid --freebayes_max_chunks '${params.freebayes_max_chunks}'. Value must be >= 1"
+    }
     if (step_order[params.start_step] > step_order[params.stop_at]) {
         error "Invalid step window: --start_step '${params.start_step}' occurs after --stop_at '${params.stop_at}'"
+    }
+
+    def validateFreebayesRegionFiles = { regionFilesChannel ->
+        regionFilesChannel.map { regionFiles ->
+            def stagedRegionFiles = regionFiles instanceof Collection ? regionFiles : [regionFiles]
+            long totalRegions = 0L
+
+            stagedRegionFiles.each { regionFile ->
+                regionFile.eachLine { line ->
+                    if (line.toString().trim()) {
+                        totalRegions++
+                    }
+                }
+            }
+
+            if (totalRegions > freebayesMaxChunks) {
+                def sizeParam = params.freebayes_region_splitter == 'bai' ? '--freebayes_cov_chunk' : '--freebayes_chunk_size'
+                error "Freebayes region generation produced ${totalRegions} target regions, which exceeds --freebayes_max_chunks ${freebayesMaxChunks}. Increase ${sizeParam} or use the default values."
+            }
+
+            regionFiles
+        }
     }
     
     // 1. INPUT PARSING
@@ -366,13 +392,13 @@ workflow POPFUN {
                 ch_population_bais_raw,
                 ch_freebayes_bai_split_script
             )
-            ch_population_region_files = FREEBAYES_SPLIT_REGIONS_BAI.out.regions
+            ch_population_region_files = validateFreebayesRegionFiles(FREEBAYES_SPLIT_REGIONS_BAI.out.regions)
         } else {
             FREEBAYES_SPLIT_REGIONS(
                 ch_ref_fai,
                 Channel.value(params.freebayes_chunk_size)
             )
-            ch_population_region_files = FREEBAYES_SPLIT_REGIONS.out.regions
+            ch_population_region_files = validateFreebayesRegionFiles(FREEBAYES_SPLIT_REGIONS.out.regions)
         }
 
         ch_population_regions = ch_population_region_files
@@ -432,13 +458,13 @@ workflow POPFUN {
                 ch_ens_population_bais_raw,
                 ch_freebayes_bai_split_script
             )
-            ch_ens_region_files = FREEBAYES_SPLIT_REGIONS_BAI.out.regions
+            ch_ens_region_files = validateFreebayesRegionFiles(FREEBAYES_SPLIT_REGIONS_BAI.out.regions)
         } else {
             FREEBAYES_SPLIT_REGIONS(
                 ch_ref_fai,
                 Channel.value(params.freebayes_chunk_size)
             )
-            ch_ens_region_files = FREEBAYES_SPLIT_REGIONS.out.regions
+            ch_ens_region_files = validateFreebayesRegionFiles(FREEBAYES_SPLIT_REGIONS.out.regions)
         }
 
         ch_ens_regions = ch_ens_region_files
@@ -507,13 +533,13 @@ workflow POPFUN {
                 ch_individual_bais_raw,
                 ch_freebayes_bai_split_script
             )
-            ch_individual_region_files = FREEBAYES_SPLIT_REGIONS_BAI.out.regions
+            ch_individual_region_files = validateFreebayesRegionFiles(FREEBAYES_SPLIT_REGIONS_BAI.out.regions)
         } else {
             FREEBAYES_SPLIT_REGIONS(
                 ch_ref_fai,
                 Channel.value(params.freebayes_chunk_size)
             )
-            ch_individual_region_files = FREEBAYES_SPLIT_REGIONS.out.regions
+            ch_individual_region_files = validateFreebayesRegionFiles(FREEBAYES_SPLIT_REGIONS.out.regions)
         }
 
         ch_individual_region_bundle = ch_individual_region_files

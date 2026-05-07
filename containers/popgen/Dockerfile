@@ -1,36 +1,32 @@
 # ============================================================
 # PopFun POPGEN container
-# Includes Python scientific stack + IQ-TREE + MrBayes
+# Includes Python runtime + IQ-TREE + MrBayes
 # ============================================================
 
-FROM mambaorg/micromamba:1.5.10
+FROM python:3.9-slim
 
-ARG MAMBA_DOCKERFILE_ACTIVATE=1
-ENV PATH=/opt/conda/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-
-USER root
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        procps \
-    && rm -rf /var/lib/apt/lists/*
-USER mambauser
+ENV PIP_NO_CACHE_DIR=1 \
+    PYTHONUNBUFFERED=1
 
 LABEL org.opencontainers.image.source="https://github.com/IdoBar/popfun" \
     org.opencontainers.image.title="popfun-popgen" \
     org.opencontainers.image.description="PopFun POPGEN_ANALYSES runtime with IQ-TREE and MrBayes" \
-      org.opencontainers.image.licenses="MIT"
+    org.opencontainers.image.licenses="MIT"
 
-RUN micromamba install -y -n base -c conda-forge -c bioconda \
-        python=3.9 \
-        numpy=1.23.5 \
-        pandas=1.4.2 \
-        pysam=0.19.1 \
-        iqtree=2.4.0 \
-        mrbayes=3.2.7 \
-    && micromamba clean --all --yes
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        iqtree \
+        mrbayes \
+        procps \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --no-cache-dir \
+        numpy==1.23.5 \
+        pysam==0.19.1
 
 # Sanity checks
 RUN python --version \
-    && python -c "import numpy, pandas, pysam; print('python-stack-ok')" \
+    && python -c "import numpy, pysam; print('python-stack-ok')" \
     && (command -v iqtree2 || command -v iqtree) \
     && command -v mb \
     && command -v ps

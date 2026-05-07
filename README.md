@@ -106,6 +106,7 @@ PopFun allows you to bypass expensive indexing steps by providing pre-built dire
 * `--freebayes_region_splitter`: Region splitting strategy for Freebayes fan-out: `fai` (default, fixed-size chunks from the FASTA index) or `bai` (coverage/data-aware chunks derived from BAM/BAI indexes).
 * `--freebayes_chunk_size`: Chunk size passed to `fasta_generate_regions.py` for splitting genomic regions in Freebayes population-mode. (Default: `100000`).
 * `--freebayes_cov_chunk`: Target cumulative BAI-backed data size per region when `--freebayes_region_splitter bai` is used. (Default: `1e8`).
+* `--freebayes_max_chunks`: Maximum total number of generated Freebayes target regions allowed before the workflow aborts and asks for coarser chunking. (Default: `2000`).
 * `--caller ensemble` currently uses one fixed strategy: strict intersection of normalized GATK and Freebayes population calls, keeping the higher-QUAL record at each shared site.
 * `--error_estimate`: `false` (default) or `true`
 * `--popgen`: Run population genetics module (PCA + phylogenetic tree) from final cohort VCF and add to MultiQC (Default: `false`).
@@ -127,7 +128,11 @@ PopFun allows you to bypass expensive indexing steps by providing pre-built dire
 
 Note: Genotype-based filtering relies on valid `GQ` fields. By default, PopFun enables Freebayes `--genotype-qualities` (via `--freebayes_args`) so genotype qualities are emitted and filtering behaves as expected.
 
-Note: `--freebayes_region_splitter bai` uses a vendored implementation based on Freebayes' `split_ref_by_bai_datasize.py` interface, but adapted to run in PopFun's current container stack without NumPy or SciPy.
+Note: `--freebayes_region_splitter bai` uses the vendored Freebayes `split_ref_by_bai_datasize.py` helper from `bin/` and runs it in a pinned lightweight `pottava/scipy` image, which provides the required NumPy and SciPy dependencies that are missing from the default Freebayes container/package.
+
+Note: Chunk-size tuning depends on how regions are generated. With `--freebayes_region_splitter bai`, higher sequencing depth usually requires larger `--freebayes_cov_chunk` values to avoid producing too many tiny regions. With `--freebayes_region_splitter fai`, appropriate `--freebayes_chunk_size` values depend more on genome size and continuity; highly fragmented assemblies with thousands of contigs often work better with `bai` splitting than with `fai` splitting.
+
+Note: If Freebayes region generation exceeds `--freebayes_max_chunks` (default: 2000), PopFun aborts before fan-out and asks you to increase `--freebayes_cov_chunk` or `--freebayes_chunk_size`, or fall back to the defaults.
 
 Note: Each Freebayes task writes a `.freebayes_diagnostics/` directory containing per-region stderr logs, a `region_runtime.tsv` timing table, and a `slowest_regions.tsv` summary of the longest-running regions.
 

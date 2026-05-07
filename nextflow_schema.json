@@ -49,6 +49,12 @@
           "minimum": 1,
           "description": "Target cumulative BAI-backed data size per region when freebayes_region_splitter is set to 'bai'."
         },
+        "freebayes_max_chunks": {
+          "type": "integer",
+          "default": 2000,
+          "minimum": 1,
+          "description": "Maximum total number of Freebayes target regions allowed after region generation. The workflow aborts if this limit is exceeded so chunk sizes can be increased before fan-out creates too many tiny tasks."
+        },
         "freebayes_args": {
           "type": "string",
           "default": "--genotype-qualities --use-best-n-alleles 4",
