@@ -27,7 +27,7 @@ process FREEBAYES_SPLIT_REGIONS {
 process FREEBAYES_SPLIT_REGIONS_BAI {
     label 'sc_small'
     conda "conda-forge::python=3.11 conda-forge::numpy=1.23.5 conda-forge::scipy=1.10.1"
-    container 'ghcr.io/idobar/popfun-bai-splitter@sha256:f499423a8c22227a2bc3af18bb7ba93e60b2525f3e1ba3f9fbf10a7b25cc3762'
+    container 'ghcr.io/idobar/popfun-bai-splitter@sha256:d9843bedf744e928c669b6b00ecd6d05d5652ab80adaf0638b4e68d32dc280fe'
     input:
         path ref_idx
         val target_data_size

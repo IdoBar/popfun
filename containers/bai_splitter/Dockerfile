@@ -19,6 +19,7 @@ RUN apt-get update \
         coreutils \
         findutils \
         gawk \
+        procps \
     && rm -rf /var/lib/apt/lists/*
 
 RUN pip install --no-cache-dir \
@@ -32,4 +33,5 @@ RUN python3 --version \
     && command -v sort \
     && command -v find \
     && command -v cut \
-    && command -v wc
+    && command -v wc \
+    && command -v ps
