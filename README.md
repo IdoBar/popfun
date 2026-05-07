@@ -105,7 +105,7 @@ HapFun allows you to bypass expensive indexing steps by providing pre-built dire
 * `--freebayes_mode`: `population` (default) or `individual`
 * `--freebayes_region_splitter`: Region splitting strategy for Freebayes fan-out: `fai` (default, fixed-size chunks from the FASTA index) or `bai` (coverage/data-aware chunks derived from BAM/BAI indexes).
 * `--freebayes_chunk_size`: Chunk size passed to `fasta_generate_regions.py` for splitting genomic regions in Freebayes population-mode. (Default: `100000`).
-* `--freebayes_cov_chunk`: Target cumulative BAI-backed data size per region when `--freebayes_region_splitter bai` is used. (Default: `100000000`).
+* `--freebayes_cov_chunk`: Target cumulative BAI-backed data size per region when `--freebayes_region_splitter bai` is used. (Default: `1e8`).
 * `--caller ensemble` currently uses one fixed strategy: strict intersection of normalized GATK and Freebayes population calls, keeping the higher-QUAL record at each shared site.
 * `--error_estimate`: `false` (default) or `true`
 * `--popgen`: Run population genetics module (PCA + phylogenetic tree) from final cohort VCF and add to MultiQC (Default: `false`).

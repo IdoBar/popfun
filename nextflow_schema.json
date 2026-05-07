@@ -45,7 +45,7 @@
         },
         "freebayes_cov_chunk": {
           "type": "integer",
-          "default": 100000000,
+          "default": 1e8,
           "minimum": 1,
           "description": "Target cumulative BAI-backed data size per region when freebayes_region_splitter is set to 'bai'."
         },
