@@ -198,11 +198,7 @@ process FREEBAYES_CALL_LIB {
     find chunks -type f -name '*.vcf' | LC_ALL=C sort > chunk_vcfs.list
     [ -s chunk_vcfs.list ] || { echo 'No Freebayes chunk outputs were produced' >&2; exit 1; }
 
-    first_chunk=\$(head -n 1 chunk_vcfs.list)
-    {
-        vcffirstheader "\$first_chunk"
-        xargs cat < chunk_vcfs.list | grep -hv '^#' || true
-    } | vcfstreamsort -w 1000 | vcfuniq > merged.vcf
+    xargs cat < chunk_vcfs.list | vcffirstheader | vcfstreamsort -w 1000 | vcfuniq > merged.vcf
 
     bgzip -c merged.vcf > ${unitId}.vcf.gz
     tabix -p vcf ${unitId}.vcf.gz
