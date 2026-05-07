@@ -63,12 +63,24 @@ process VCF_ENSEMBLE_COMBINE {
     bcftools norm -m -any -O z -o freebayes.norm.vcf.gz $vcf_fb
     tabix -f -p vcf freebayes.norm.vcf.gz
 
-    bcftools query -f '%CHROM\t%POS\t%REF\t%ALT\t%QUAL\n' gatk.norm.vcf.gz | sort -k1,1 -k2,2n -k3,3 -k4,4 > gatk.tsv
-    bcftools query -f '%CHROM\t%POS\t%REF\t%ALT\t%QUAL\n' freebayes.norm.vcf.gz | sort -k1,1 -k2,2n -k3,3 -k4,4 > freebayes.tsv
+    bcftools query -f '%CHROM\\t%POS\\t%REF\\t%ALT\\t%QUAL\\n' gatk.norm.vcf.gz | sort -k1,1 -k2,2n -k3,3 -k4,4 > gatk.tsv
+    bcftools query -f '%CHROM\\t%POS\\t%REF\\t%ALT\\t%QUAL\\n' freebayes.norm.vcf.gz | sort -k1,1 -k2,2n -k3,3 -k4,4 > freebayes.tsv
 
-    join -t '	' -1 1 -2 1 <(awk 'BEGIN{OFS="\t"} {print \$1":"\$2":"\$3":"\$4, \$5}' gatk.tsv) <(awk 'BEGIN{OFS="\t"} {print \$1":"\$2":"\$3":"\$4, \$5}' freebayes.tsv) > shared_sites.tsv
+    awk 'BEGIN { FS=OFS="\\t" }
+        NR==FNR {
+            key = \$1":"\$2":"\$3":"\$4
+            gatk_qual[key] = \$5
+            next
+        }
+        {
+            key = \$1":"\$2":"\$3":"\$4
+            if (key in gatk_qual) {
+                print key, gatk_qual[key], \$5
+            }
+        }
+    ' gatk.tsv freebayes.tsv > shared_sites.tsv
 
-    awk 'BEGIN{FS=OFS="\t"} {
+    awk 'BEGIN{FS=OFS="\\t"} {
         split(\$1, parts, ":")
         qual1 = (\$2 == "." ? -1 : \$2 + 0)
         qual2 = (\$3 == "." ? -1 : \$3 + 0)
@@ -76,18 +88,18 @@ process VCF_ENSEMBLE_COMBINE {
         print parts[1], parts[2], parts[3], parts[4], source
     }' shared_sites.tsv > winners.tsv
 
-    awk 'BEGIN{FS=OFS="\t"} \$5 == "gatk" {print \$1, \$2, \$3, \$4}' winners.tsv > gatk.keep.tsv
-    awk 'BEGIN{FS=OFS="\t"} \$5 == "freebayes" {print \$1, \$2, \$3, \$4}' winners.tsv > freebayes.keep.tsv
+    awk 'BEGIN{FS=OFS="\\t"} \$5 == "gatk" {print \$1, \$2, \$3, \$4}' winners.tsv > gatk.keep.tsv
+    awk 'BEGIN{FS=OFS="\\t"} \$5 == "freebayes" {print \$1, \$2, \$3, \$4}' winners.tsv > freebayes.keep.tsv
 
     bcftools view -h gatk.norm.vcf.gz | awk '
         /^#CHROM/ {
-            print "##INFO=<ID=CALLERS,Number=.,Type=String,Description=\"Callers reporting this variant\">"
-            print "##INFO=<ID=NUM_CALLERS,Number=1,Type=Integer,Description=\"Number of callers supporting this variant\">"
+            print "##INFO=<ID=CALLERS,Number=.,Type=String,Description=\\\"Callers reporting this variant\\\">"
+            print "##INFO=<ID=NUM_CALLERS,Number=1,Type=Integer,Description=\\\"Number of callers supporting this variant\\\">"
         }
         { print }
     ' > ensemble.header.vcf
 
-    bcftools view -H gatk.norm.vcf.gz | awk 'BEGIN{FS=OFS="\t"}
+    bcftools view -H gatk.norm.vcf.gz | awk 'BEGIN{FS=OFS="\\t"}
         NR==FNR { keep[\$1 FS \$2 FS \$3 FS \$4] = 1; next }
         {
             key = \$1 FS \$2 FS \$4 FS \$5
@@ -98,7 +110,7 @@ process VCF_ENSEMBLE_COMBINE {
         }
     ' gatk.keep.tsv - > gatk.selected.vcf
 
-    bcftools view -H freebayes.norm.vcf.gz | awk 'BEGIN{FS=OFS="\t"}
+    bcftools view -H freebayes.norm.vcf.gz | awk 'BEGIN{FS=OFS="\\t"}
         NR==FNR { keep[\$1 FS \$2 FS \$3 FS \$4] = 1; next }
         {
             key = \$1 FS \$2 FS \$4 FS \$5

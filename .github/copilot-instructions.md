@@ -52,6 +52,7 @@ For any pipeline logic change, validate at least:
 ## Practical Lessons from Prior Fixes
 
 - Many failures surfaced as secondary Nextflow exceptions after a process failed; always identify the first process error and exit code.
-- Many failures resulted from improper escaping of variables and newlines (`\n`) in Nextflow `script` blocks processed by Groovy. Make sure to escape variables properly (use `\\n` for newlines within `awk` scripts) to avoid issues or use Nextflow `shell` blocks as an alternative.
+- Many failures resulted from improper escaping of variables and string literals in Nextflow `script` blocks processed by Groovy. When writing `awk` inside triple-quoted Groovy strings, treat backslash escapes as Groovy-sensitive: use `\\n` for newlines, `\\t` for tabs, and `\\\"` for embedded double quotes that must survive into the runtime `awk` program. Do not assume `\n`, `\t`, or `\"` will reach `awk` unchanged.
+- For `awk` programs embedded in Nextflow `script` blocks, prefer a quick literal-escaping review before finalizing edits: check every `FS`/`OFS`, `printf` format string, and emitted header line for Groovy-safe escaping.
 - Relative samplesheet paths can resolve incorrectly if not anchored; workflow input resolution should check project-root and samplesheet-relative candidates.
 - Always run Nextflow validation test runs on local `wsl` (may need an active login to activate the `base` conda environment where Nextflow is installed) and make sure to escape Windows paths and internal variables properly; prefer absolute paths and verify with `pwd` in the test profile.
