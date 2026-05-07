@@ -1,5 +1,5 @@
 # ============================================================
-# HapFun POPGEN container
+# PopFun POPGEN container
 # Includes Python scientific stack + IQ-TREE + MrBayes
 # ============================================================
 
@@ -14,9 +14,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 USER mambauser
 
-LABEL org.opencontainers.image.source="https://github.com/IdoBar/hapfun" \
-      org.opencontainers.image.title="hapfun-popgen" \
-      org.opencontainers.image.description="HapFun POPGEN_ANALYSES runtime with IQ-TREE and MrBayes" \
+LABEL org.opencontainers.image.source="https://github.com/IdoBar/popfun" \
+    org.opencontainers.image.title="popfun-popgen" \
+    org.opencontainers.image.description="PopFun POPGEN_ANALYSES runtime with IQ-TREE and MrBayes" \
       org.opencontainers.image.licenses="MIT"
 
 RUN micromamba install -y -n base -c conda-forge -c bioconda \

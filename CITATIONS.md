@@ -1,4 +1,4 @@
-# HapFun: Citations
+# PopFun: Citations
 
 Please cite the workflow framework and relevant software used in your analysis.
 

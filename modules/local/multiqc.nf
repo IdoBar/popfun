@@ -32,11 +32,11 @@ process GENERATE_SOFTWARE_VERSIONS_MQC {
         cat > software_versions_mqc.yml << 'YAML'
 id: software_versions
 section_name: "Software Versions"
-description: "Tool versions used by HapFun."
+description: "Tool versions used by PopFun."
 plot_type: table
 pconfig:
-    id: hapfun_software_versions_table
-    title: "HapFun: Software Versions"
+    id: popfun_software_versions_table
+    title: "PopFun: Software Versions"
     col1_header: "Tool"
     sort_rows: false
 headers:

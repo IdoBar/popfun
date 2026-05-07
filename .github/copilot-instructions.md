@@ -1,20 +1,20 @@
-# HapFun Copilot Instructions
+# PopFun Copilot Instructions
 
 ## Project Overview
 
-HapFun is a Nextflow DSL2 pipeline for haploid fungal variant discovery with optional population genetics and error-estimation branches.
+PopFun is a Nextflow DSL2 pipeline for population-scale fungal variant discovery with optional population genetics and error-estimation branches.
 
 This file is the global guidance layer. Module-specific rules live under `.github/instructions/`.
 
 Start here:
 - [README.md](../README.md)
 - [nextflow.config](../nextflow.config)
-- [workflows/hapfun.nf](../workflows/hapfun.nf)
+- [workflows/popfun.nf](../workflows/popfun.nf)
 - [conf/base.config](../conf/base.config)
 
 ## Core Development Rules
 
-- Keep workflow logic in DSL2 style with explicit module includes and channel wiring as shown in [workflows/hapfun.nf](../workflows/hapfun.nf).
+- Keep workflow logic in DSL2 style with explicit module includes and channel wiring as shown in [workflows/popfun.nf](../workflows/popfun.nf).
 - Preserve nf-core style metadata tuples and maps (`meta` maps and tuple contracts) across module boundaries.
 - Do not change emitted channel shapes unless every consumer is updated in the same change.
 - Prefer minimal, targeted edits and simple code solutions that relies minimally on loops utilising internal variables; avoid broad refactors in this repository.
@@ -44,7 +44,7 @@ Before changing container tags or adding new tools to a process:
 
 For any pipeline logic change, validate at least:
 
-- Parameter compatibility guards in [workflows/hapfun.nf](../workflows/hapfun.nf).
+- Parameter compatibility guards in [workflows/popfun.nf](../workflows/popfun.nf).
 - Process input/output contract compatibility between module and workflow wiring.
 - Container pullability and command availability for modified processes.
 - README accuracy when behavior changes (especially caller and joint-caller combinations).

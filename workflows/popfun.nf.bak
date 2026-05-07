@@ -9,7 +9,7 @@ include { MULTIQC } from '../modules/local/multiqc'
 include { VCF_FILTER } from '../modules/local/vcf_filter'
 include { BCFTOOLS_STATS as BCFTOOLS_STATS_RAW; BCFTOOLS_STATS as BCFTOOLS_STATS_FILTERED } from '../modules/local/vcf_tools'
 
-workflow HAPFUN {
+workflow POPFUN {
     ch_multiqc_reports = Channel.empty()
     
     ch_input = Channel.fromPath(params.input).splitCsv(header:true).map { row -> 

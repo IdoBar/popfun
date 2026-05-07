@@ -1,14 +1,14 @@
-# HapFun: Haploid Fungal SNP Calling Pipeline
+# PopFun: Population-Scale Fungal Variant Calling Pipeline
 
 <p align="center">
-    <img src="assets/hapfun.png" alt="HapFun logo" width="320" />
+    <img src="assets/popfun.png" alt="PopFun logo" width="420" />
 </p>
 
 <!-- 
 [![Nextflow](https://img.shields.io/badge/nextflow%20DSL2-%E2%89%A522.10.1-23aa62.svg)](https://www.nextflow.io/)
 [![run with conda](https://img.shields.io/badge/run%20with-conda-3EB049?labelColor=000000&logo=anaconda)](https://docs.conda.io/en/latest/)
 [![run with docker](https://img.shields.io/badge/run%20with-docker-0db7ed?labelColor=000000&logo=docker)](https://www.docker.com/) -->
-[![Repo](https://img.shields.io/badge/GitHub-IdoBar%2Fhapfun-181717?logo=github)](https://github.com/IdoBar/hapfun)
+[![Repo](https://img.shields.io/badge/GitHub-IdoBar%2Fpopfun-181717?logo=github)](https://github.com/IdoBar/popfun)
 [![Nextflow](https://img.shields.io/badge/nextflow%20DSL2-%E2%89%A522.10.1-23aa62.svg?labelColor=000000&logo=data:image/svg%2bxml;base64,PHN2ZyB3aWR0aD0iMjUxIiBoZWlnaHQ9IjI1MiIgdmlld0JveD0iMCAwIDI1MSAyNTIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+DQo8cGF0aCBkPSJNMCA0Ny42MzQ1QzM5LjQ1IDUwLjI1NDMgNzEuMDYgODEuOTQyMiA3My41NCAxMjEuNDNIMTE5LjYxQzExNy4wNSA1Ni40NzM5IDY0LjkzIDQuMjU3NDQgMCAxLjU1NzYyVjQ3LjYzNDVaIiBmaWxsPSIjMjJBRTYzIi8+DQo8cGF0aCBkPSJNNzMuOCAxMzEuOTM5QzcxLjE4IDE3MS4zODYgMzkuNDkgMjAyLjk5NCAwIDIwNS40NzRWMjUxLjU0MUM2NC45NiAyNDguOTgxIDExNy4xOCAxOTYuODY1IDExOS44OCAxMzEuOTM5SDczLjhaIiBmaWxsPSIjMjJBRTYzIi8+DQo8cGF0aCBkPSJNMTc2LjIwMSAxMjEuMTZDMTc4LjgyMSA4MS43MTIyIDIxMC41MTEgNTAuMTA0MyAyNTAuMDAxIDQ3LjYyNDVWMS41NTc2MkMxODUuMDQxIDQuMTE3NDQgMTMyLjgyMSA1Ni4yMzM5IDEzMC4xMjEgMTIxLjE2SDE3Ni4yMDFaIiBmaWxsPSIjMjJBRTYzIi8+DQo8cGF0aCBkPSJNMjUwLjAwMSAyMDUuNDY0QzIxMC41NTEgMjAyLjg0NSAxNzguOTQxIDE3MS4xNTcgMTc2LjQ2MSAxMzEuNjY5SDEzMC4zOTFDMTMyLjk1MSAxOTYuNjI1IDE4NS4wNzEgMjQ4Ljg0MiAyNTAuMDAxIDI1MS41NDFWMjA1LjQ2NFoiIGZpbGw9IiMyMkFFNjMiLz4NCjwvc3ZnPg==)](https://www.nextflow.io/)
 [![run with conda](https://img.shields.io/badge/run%20with-conda-3EB049.svg?labelColor=000000&logo=anaconda)](https://docs.conda.io/en/latest/)
 [![run with docker](https://img.shields.io/badge/run%20with-docker-0db7ed.svg?labelColor=000000&logo=docker)](https://www.docker.com/)
@@ -16,13 +16,13 @@
 
 ## Introduction
 
-**HapFun** (Haploid Fungal SNP Calling) is a highly scalable bioinformatics pipeline for identifying single nucleotide polymorphisms (SNPs) and insertions/deletions (Indels) from whole-genome sequencing (WGS) data of clonal haploid fungal isolates.
+**PopFun** (Population Fungal Variant Calling) is a highly scalable bioinformatics pipeline for identifying single nucleotide polymorphisms (SNPs) and insertions/deletions (Indels) from whole-genome sequencing (WGS) data of clonal fungal isolate collections and related population-scale cohorts.
 
-Built using Nextflow DSL2 and strictly adhering to nf-core data structures (including meta maps), HapFun bridges the gap between raw sequencing reads and high-quality, filtered variant calls. It is highly parameterized, automatically handles missing reference indices, and includes a unique parallel track for estimating error rates across replicate libraries of same samples.
+Built using Nextflow DSL2 and strictly adhering to nf-core data structures (including meta maps), PopFun bridges the gap between raw sequencing reads and high-quality, filtered variant calls. It is highly parameterized, automatically handles missing reference indices, and includes a parallel track for estimating error rates across replicate libraries of the same samples.
 
 ## Pipeline Summary
 
-By default, **HapFun** performs the following steps:
+By default, **PopFun** performs the following steps:
 
 1. **Reference Preparation**: Automatically decompresses the reference (if provided as `.fasta.gz`) and generates missing `.fai`, `.dict`, and aligner index directories (`bwa-mem2` or `bowtie2`) if not provided by the user.
 2. **Read QC & Trimming**: `fastp` (default) OR `Trimmomatic` (with `FastQC`).
@@ -37,7 +37,7 @@ By default, **HapFun** performs the following steps:
     * *After global region generation, per-chromosome region files are produced so each population shard remains chromosome-scoped for concatenation.*
     * *`--caller ensemble` runs both GATK and Freebayes population calling, keeps only shared normalized REF/ALT calls, retains the higher-QUAL representation at each shared site, and also reports the raw caller VCFs in the results directory.*
 7. **Error Estimation (Optional)**: If `--error_estimate true` is flagged, the pipeline automatically separates replicate libraries, calls variants on them independently, and calculates genotype discordance rates using a custom Python module. The raw per-library VCFs used in this comparison are also retained in `results/variants/error_estimate_libraries/`.
-8. **Population Genetics (Optional)**: If `--popgen true`, HapFun performs PCA (PC1-PC3) and constructs a phylogenetic tree from the final cohort VCF (regardless of variant caller and calling mode), then adds both panels to MultiQC. If a `pop` column is present in the samplesheet, it is used to color PCA markers and tree nodes.
+8. **Population Genetics (Optional)**: If `--popgen true`, PopFun performs PCA (PC1-PC3) and constructs a phylogenetic tree from the final cohort VCF (regardless of variant caller and calling mode), then adds both panels to MultiQC. If a `pop` column is present in the samplesheet, it is used to color PCA markers and tree nodes.
 9. **Variant Filtering**: Strictly filters VCFs based on Depth (DP), Quality (QUAL), and polymorphism, while recalculating INFO tags (`bcftools +fill-tags`). Outputs distinct `.snps.vcf` and `.indels.vcf` files.
 10. **Final Reporting**: Aggregates QC metrics and software versions across all steps into a single HTML report (`MultiQC`).
 
@@ -71,7 +71,7 @@ By default, **HapFun** performs the following steps:
 
 ## Advanced Usage
 
-HapFun allows you to bypass expensive indexing steps by providing pre-built directories, and allows fine-grained control over tool arguments.
+PopFun allows you to bypass expensive indexing steps by providing pre-built directories, and allows fine-grained control over tool arguments.
 
 **Example: Providing pre-built indices, annotations, and custom trimming arguments:**
 
@@ -125,9 +125,9 @@ HapFun allows you to bypass expensive indexing steps by providing pre-built dire
 
 **VCF Filtering:**
 
-Note: Genotype-based filtering relies on valid `GQ` fields. By default, HapFun enables Freebayes `--genotype-qualities` (via `--freebayes_args`) so genotype qualities are emitted and filtering behaves as expected.
+Note: Genotype-based filtering relies on valid `GQ` fields. By default, PopFun enables Freebayes `--genotype-qualities` (via `--freebayes_args`) so genotype qualities are emitted and filtering behaves as expected.
 
-Note: `--freebayes_region_splitter bai` uses a vendored implementation based on Freebayes' `split_ref_by_bai_datasize.py` interface, but adapted to run in HapFun's current container stack without NumPy or SciPy.
+Note: `--freebayes_region_splitter bai` uses a vendored implementation based on Freebayes' `split_ref_by_bai_datasize.py` interface, but adapted to run in PopFun's current container stack without NumPy or SciPy.
 
 Note: Each Freebayes task writes a `.freebayes_diagnostics/` directory containing per-region stderr logs, a `region_runtime.tsv` timing table, and a `slowest_regions.tsv` summary of the longest-running regions.
 
@@ -161,7 +161,7 @@ Upon completion, the `--outdir` will contain the following structured directorie
 
 ## Credits
 
-HapFun utilizes the following open-source tools via [Bioconda](https://bioconda.github.io/) and [Biocontainers](https://biocontainers.pro/):
+PopFun utilizes the following open-source tools via [Bioconda](https://bioconda.github.io/) and [Biocontainers](https://biocontainers.pro/):
 
 * [Fastp](https://github.com/OpenGene/fastp) [1.3.0] / [FastQC](https://www.bioinformatics.babraham.ac.uk/projects/fastqc/) [0.12.1] / [Trimmomatic](http://www.usadellab.org/cms/?page=trimmomatic) [0.40]
 * [BWA-mem2](https://github.com/bwa-mem2/bwa-mem2) [2.3] / [Bowtie2](https://bowtie-mac.sourceforge.net/bowtie2/index.shtml) [2.5.5]
@@ -186,8 +186,8 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 Contributions are welcome through pull requests and issue reports.
 
-* Bug reports and feature requests: [GitHub Issues](https://github.com/IdoBar/hapfun/issues)
-* Code contributions: [Pull Requests](https://github.com/IdoBar/hapfun/pulls)
+* Bug reports and feature requests: [GitHub Issues](https://github.com/IdoBar/popfun/issues)
+* Code contributions: [Pull Requests](https://github.com/IdoBar/popfun/pulls)
 
 When reporting issues, please include:
 
@@ -198,7 +198,7 @@ When reporting issues, please include:
 
 ## Citations
 
-If you use HapFun in your work, please cite the workflow framework and the software tools used in your run.
+If you use PopFun in your work, please cite the workflow framework and the software tools used in your run.
 
 The full bibliography for tools used in this pipeline is provided in [CITATIONS.md](CITATIONS.md).
 This pipeline uses code and infrastructure developed and maintained by the [nf-core](https://nf-co.re) community, reused here under the [MIT license](https://github.com/nf-core/tools/blob/master/LICENSE).

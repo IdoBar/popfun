@@ -241,8 +241,8 @@ process VCF_DISCORDANCE_MQC {
     path discordance_csvs
 
     output:
-    path "hapfun_discordance_rate_mqc.csv", emit: mqc_rate_csv
-    path "hapfun_discordance_metrics_mqc.csv", emit: mqc_metrics_csv
+    path "popfun_discordance_rate_mqc.csv", emit: mqc_rate_csv
+    path "popfun_discordance_metrics_mqc.csv", emit: mqc_metrics_csv
 
     script:
     """
@@ -279,12 +279,12 @@ for sample_id in sample_values:
     sample_values[sample_id].setdefault('raw', {col: 0.0 for col in metric_cols})
     sample_values[sample_id].setdefault('filtered', {col: 0.0 for col in metric_cols})
 
-rate_header = '''# id: 'hapfun_discordance_rate'
+rate_header = '''# id: 'popfun_discordance_rate'
 # section_name: 'Library Discordance Before vs After Filtering'
 # description: 'Mean pairwise genotype discordance rate per sample, comparing raw and filtered variant calls.'
 # plot_type: 'bargraph'
 # pconfig:
-#   id: 'hapfun_discordance_rate_plot'
+#   id: 'popfun_discordance_rate_plot'
 #   title: 'Discordance Before vs After Filtering'
 #   ylab: 'Discordance rate'
 #   xlab: 'Sample'
@@ -296,12 +296,12 @@ for sample_id, vals in sorted(sample_values.items()):
         f"{sample_id},{round(vals['raw']['discordance_rate'], 6)},{round(vals['filtered']['discordance_rate'], 6)}"
     )
 
-metrics_header = '''# id: 'hapfun_discordance_metrics'
+metrics_header = '''# id: 'popfun_discordance_metrics'
 # section_name: 'Library Discordance Metrics (Raw vs Filtered)'
 # description: 'Mean pairwise shared sites, concordant sites, discordant sites, and discordance rate per sample for raw and filtered calls.'
 # plot_type: 'table'
 # pconfig:
-#   id: 'hapfun_discordance_metrics_table'
+#   id: 'popfun_discordance_metrics_table'
 #   title: 'Library Discordance Metrics (Raw vs Filtered)'
 '''
 
@@ -316,11 +316,11 @@ for sample_id, vals in sorted(sample_values.items()):
     )
 
 nl = chr(10)
-with open('hapfun_discordance_rate_mqc.csv', 'w') as fh:
+with open('popfun_discordance_rate_mqc.csv', 'w') as fh:
     fh.write(rate_header)
     fh.write(nl.join(rate_rows) + nl)
 
-with open('hapfun_discordance_metrics_mqc.csv', 'w') as fh:
+with open('popfun_discordance_metrics_mqc.csv', 'w') as fh:
     fh.write(metrics_header)
     fh.write(nl.join(metrics_rows) + nl)
 PY

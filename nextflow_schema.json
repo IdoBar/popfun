@@ -1,8 +1,8 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema",
-  "$id": "https://raw.githubusercontent.com/nf-core/hapfun/master/nextflow_schema.json",
-  "title": "HapFun pipeline parameters",
-  "description": "Haploid Fungal SNP Calling Pipeline",
+  "$id": "https://raw.githubusercontent.com/IdoBar/popfun/main/nextflow_schema.json",
+  "title": "PopFun pipeline parameters",
+  "description": "Population-Scale Fungal Variant Calling Pipeline",
   "type": "object",
   "definitions": {
     "input_output_options": {

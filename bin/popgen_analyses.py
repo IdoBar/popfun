@@ -1005,7 +1005,7 @@ def build_tree_svg(root, pop_map, cmap, tree_method):
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Run population genetics PCA/tree analyses for hapfun.')
+    parser = argparse.ArgumentParser(description='Run population genetics PCA/tree analyses for popfun.')
     parser.add_argument('--vcf', required=True, help='Input cohort VCF.gz path staged by Nextflow')
     parser.add_argument('--samplesheet', required=True, help='Input samplesheet CSV with sample/pop columns')
     parser.add_argument('--tree-method', required=True, choices=['upgma', 'nj', 'ml', 'bayesian'], help='Tree inference mode')
