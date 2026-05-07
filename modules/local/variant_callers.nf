@@ -4,19 +4,75 @@ process FREEBAYES {
     conda "bioconda::freebayes=1.3.10"
     container 'quay.io/biocontainers/freebayes:1.3.10--hbefcdb2_0'
     input:
-        tuple val(meta), path(bam), path(bai)
-        path ref
-        path ref_idx
+        tuple val(meta), path(bam), path(bai), path(region_files), path(ref)
     output:
         path "${meta.id}.vcf.gz", emit: vcf
         path "${meta.id}.vcf.gz.tbi", emit: tbi
+        path "${meta.id}.freebayes_diagnostics", emit: diagnostics
     script:
     def args = task.ext.args ?: ''
     def threads = Math.max(1, (task.cpus ?: 1) as Integer)
+    def diagnosticsDir = "${meta.id}.freebayes_diagnostics"
     """
-    awk '{ print \$1 ":1-" \$2 }' $ref_idx > chromosome_regions.txt
+    set -euo pipefail
 
-    freebayes-parallel chromosome_regions.txt ${threads} -f $ref -p ${params.ploidy} $args $bam | bgzip -c > ${meta.id}.vcf.gz
+    find -L . -type f -name '*.regions.txt' | LC_ALL=C sort > region_file_paths.txt
+    [ -s region_file_paths.txt ] || { echo 'No staged region files discovered for FREEBAYES' >&2; exit 1; }
+    xargs cat < region_file_paths.txt > chromosome_regions.txt
+
+    [ -s chromosome_regions.txt ] || { echo 'No Freebayes regions generated' >&2; exit 1; }
+
+    mkdir -p chunks ${diagnosticsDir}/stderr ${diagnosticsDir}/metrics
+    export NF_REF="$ref"
+    export NF_PLOIDY="${params.ploidy}"
+    export NF_ARGS="${args}"
+    export NF_BAM="$bam"
+    export NF_DIAG_DIR="${diagnosticsDir}"
+
+    set +e
+    awk 'NF { printf "%s chunks/%08d.vcf\n", \$0, NR }' chromosome_regions.txt \
+        | xargs -r -n 2 -P ${threads} sh -c '
+            region="\$1"
+            chunk_vcf="\$2"
+            chunk_id=\$(basename "\${chunk_vcf%.vcf}")
+            stderr_log="\$NF_DIAG_DIR/stderr/\${chunk_id}.stderr.log"
+            metric_file="\$NF_DIAG_DIR/metrics/\${chunk_id}.tsv"
+            start_epoch=\$(date +%s)
+            freebayes -f "\$NF_REF" -p "\$NF_PLOIDY" \$NF_ARGS "\$NF_BAM" --region "\$region" > "\$chunk_vcf" 2> "\$stderr_log"
+            status=\$?
+            end_epoch=\$(date +%s)
+            duration_seconds=\$((end_epoch - start_epoch))
+            printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" \
+                "\$chunk_id" "\$region" "\$status" "\$start_epoch" "\$end_epoch" "\$duration_seconds" "\$chunk_vcf" "\$stderr_log" > "\$metric_file"
+            exit "\$status"
+        ' sh
+    xargs_status=\$?
+    set -e
+
+    find ${diagnosticsDir}/metrics -type f -name '*.tsv' | LC_ALL=C sort > metric_files.list
+    [ -s metric_files.list ] || { echo 'No Freebayes diagnostic metrics were produced' >&2; exit 1; }
+
+    printf 'chunk_id\tregion\texit_status\tstart_epoch\tend_epoch\tduration_seconds\tvcf_path\tstderr_log\n' > ${diagnosticsDir}/region_runtime.tsv
+    xargs cat < metric_files.list >> ${diagnosticsDir}/region_runtime.tsv
+
+    printf 'chunk_id\tregion\texit_status\tstart_epoch\tend_epoch\tduration_seconds\tvcf_path\tstderr_log\n' > ${diagnosticsDir}/slowest_regions.tsv
+    tail -n +2 ${diagnosticsDir}/region_runtime.tsv | LC_ALL=C sort -t "\$(printf '\t')" -k6,6nr | head -n 10 >> ${diagnosticsDir}/slowest_regions.tsv
+
+    if [ "\$xargs_status" -ne 0 ]; then
+        echo 'One or more Freebayes chunk calls failed; see freebayes diagnostics for details' >&2
+        exit "\$xargs_status"
+    fi
+
+    find chunks -type f -name '*.vcf' | LC_ALL=C sort > chunk_vcfs.list
+    [ -s chunk_vcfs.list ] || { echo 'No Freebayes chunk outputs were produced' >&2; exit 1; }
+
+    first_chunk=\$(head -n 1 chunk_vcfs.list)
+    {
+        vcffirstheader "\$first_chunk"
+        xargs cat < chunk_vcfs.list | grep -hv '^#' || true
+    } | vcfstreamsort -w 1000 | vcfuniq > merged.vcf
+
+    bgzip -c merged.vcf > ${meta.id}.vcf.gz
     tabix -p vcf ${meta.id}.vcf.gz
     """
 }
@@ -30,14 +86,68 @@ process FREEBAYES_POPULATION {
         tuple val(meta), path(region_file), path(bams), path(bais), path(ref), path(ref_idx)
     output:
         tuple val(meta), path("${meta.id}.vcf.gz"), path("${meta.id}.vcf.gz.tbi"), emit: vcf
+        path "${meta.id}.freebayes_diagnostics", emit: diagnostics
     script:
     def args = task.ext.args ?: ''
     def threads = Math.max(1, (task.cpus ?: 1) as Integer)
+    def diagnosticsDir = "${meta.id}.freebayes_diagnostics"
     """
-    find -L . -type f -name '*.bam' | sort > bam_list.txt
+    set -euo pipefail
+
+    find -L . -type f -name '*.bam' | LC_ALL=C sort > bam_list.txt
     [ -s bam_list.txt ] || { echo 'No staged BAM inputs discovered for FREEBAYES_POPULATION' >&2; exit 1; }
 
-    freebayes-parallel $region_file ${threads} -f $ref -p ${params.ploidy} $args -L bam_list.txt | bgzip -c > ${meta.id}.vcf.gz
+    mkdir -p chunks ${diagnosticsDir}/stderr ${diagnosticsDir}/metrics
+    export NF_REF="$ref"
+    export NF_PLOIDY="${params.ploidy}"
+    export NF_ARGS="${args}"
+    export NF_BAM_LIST="\$(pwd)/bam_list.txt"
+    export NF_DIAG_DIR="${diagnosticsDir}"
+
+    set +e
+    awk 'NF { printf "%s chunks/%08d.vcf\n", \$0, NR }' $region_file \
+        | xargs -r -n 2 -P ${threads} sh -c '
+            region="\$1"
+            chunk_vcf="\$2"
+            chunk_id=\$(basename "\${chunk_vcf%.vcf}")
+            stderr_log="\$NF_DIAG_DIR/stderr/\${chunk_id}.stderr.log"
+            metric_file="\$NF_DIAG_DIR/metrics/\${chunk_id}.tsv"
+            start_epoch=\$(date +%s)
+            freebayes -f "\$NF_REF" -p "\$NF_PLOIDY" \$NF_ARGS -L "\$NF_BAM_LIST" --region "\$region" > "\$chunk_vcf" 2> "\$stderr_log"
+            status=\$?
+            end_epoch=\$(date +%s)
+            duration_seconds=\$((end_epoch - start_epoch))
+            printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" \
+                "\$chunk_id" "\$region" "\$status" "\$start_epoch" "\$end_epoch" "\$duration_seconds" "\$chunk_vcf" "\$stderr_log" > "\$metric_file"
+            exit "\$status"
+        ' sh
+    xargs_status=\$?
+    set -e
+
+    find ${diagnosticsDir}/metrics -type f -name '*.tsv' | LC_ALL=C sort > metric_files.list
+    [ -s metric_files.list ] || { echo 'No Freebayes diagnostic metrics were produced' >&2; exit 1; }
+
+    printf 'chunk_id\tregion\texit_status\tstart_epoch\tend_epoch\tduration_seconds\tvcf_path\tstderr_log\n' > ${diagnosticsDir}/region_runtime.tsv
+    xargs cat < metric_files.list >> ${diagnosticsDir}/region_runtime.tsv
+
+    printf 'chunk_id\tregion\texit_status\tstart_epoch\tend_epoch\tduration_seconds\tvcf_path\tstderr_log\n' > ${diagnosticsDir}/slowest_regions.tsv
+    tail -n +2 ${diagnosticsDir}/region_runtime.tsv | LC_ALL=C sort -t "\$(printf '\t')" -k6,6nr | head -n 10 >> ${diagnosticsDir}/slowest_regions.tsv
+
+    if [ "\$xargs_status" -ne 0 ]; then
+        echo 'One or more Freebayes chunk calls failed; see freebayes diagnostics for details' >&2
+        exit "\$xargs_status"
+    fi
+
+    find chunks -type f -name '*.vcf' | LC_ALL=C sort > chunk_vcfs.list
+    [ -s chunk_vcfs.list ] || { echo 'No Freebayes chunk outputs were produced' >&2; exit 1; }
+
+    first_chunk=\$(head -n 1 chunk_vcfs.list)
+    {
+        vcffirstheader "\$first_chunk"
+        xargs cat < chunk_vcfs.list | grep -hv '^#' || true
+    } | vcfstreamsort -w 1000 | vcfuniq > merged.vcf
+
+    bgzip -c merged.vcf > ${meta.id}.vcf.gz
     tabix -p vcf ${meta.id}.vcf.gz
     """
 }

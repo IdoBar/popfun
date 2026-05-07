@@ -17,7 +17,7 @@ Start here:
 - Keep workflow logic in DSL2 style with explicit module includes and channel wiring as shown in [workflows/hapfun.nf](../workflows/hapfun.nf).
 - Preserve nf-core style metadata tuples and maps (`meta` maps and tuple contracts) across module boundaries.
 - Do not change emitted channel shapes unless every consumer is updated in the same change.
-- Prefer minimal, targeted edits; avoid broad refactors in this repository.
+- Prefer minimal, targeted edits and simple code solutions that relies minimally on loops utilising internal variables; avoid broad refactors in this repository.
 
 ## Scoped Instruction Files
 
@@ -52,4 +52,6 @@ For any pipeline logic change, validate at least:
 ## Practical Lessons from Prior Fixes
 
 - Many failures surfaced as secondary Nextflow exceptions after a process failed; always identify the first process error and exit code.
+- Many failures resulted from improper escaping of variables in Nextflow `script` blocks processed by Groovy. Make sure to escape variables properly to avoid issues or use Nextflow `shell` blocks as an alternative.
 - Relative samplesheet paths can resolve incorrectly if not anchored; workflow input resolution should check project-root and samplesheet-relative candidates.
+- Test runs on local `wsl` requires careful escaping of Windows paths and internal variables; prefer absolute paths and verify with `pwd` in the test profile.

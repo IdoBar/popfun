@@ -33,9 +33,9 @@ By default, **HapFun** performs the following steps:
 5. **Alignment QC**: `Qualimap` (Supports optional `.gff`/`.bed` annotations for targeted region metrics).
 6. **Variant Calling**: `Freebayes` (Population mode default), `GATK HaplotypeCaller`, or an `ensemble` intersection of both callers.
     * *Supports Freebayes population-level calling, or individual sample calling + merging.*
-    * *Population mode can split chromosomes into multiple sub-regions for finer `freebayes-parallel` fan-out using fixed-size chunks from `fasta_generate_regions.py`.*
+    * *Population mode can split chromosomes into multiple sub-regions for finer internal Freebayes region fan-out using either fixed-size FASTA chunks or BAI data-aware regioning.*
     * *After global region generation, per-chromosome region files are produced so each population shard remains chromosome-scoped for concatenation.*
-    * *`--caller ensemble` runs both GATK and Freebayes population calling, keeps only shared normalized REF/ALT calls, and retains the higher-QUAL representation at each shared site.*
+    * *`--caller ensemble` runs both GATK and Freebayes population calling, keeps only shared normalized REF/ALT calls, retains the higher-QUAL representation at each shared site, and also reports the raw caller VCFs in the results directory.*
 7. **Error Estimation (Optional)**: If `--error_estimate true` is flagged, the pipeline automatically separates replicate libraries, calls variants on them independently, and calculates genotype discordance rates using a custom Python module. The raw per-library VCFs used in this comparison are also retained in `results/variants/error_estimate_libraries/`.
 8. **Population Genetics (Optional)**: If `--popgen true`, HapFun performs PCA (PC1-PC3) and constructs a phylogenetic tree from the final cohort VCF (regardless of variant caller and calling mode), then adds both panels to MultiQC. If a `pop` column is present in the samplesheet, it is used to color PCA markers and tree nodes.
 9. **Variant Filtering**: Strictly filters VCFs based on Depth (DP), Quality (QUAL), and polymorphism, while recalculating INFO tags (`bcftools +fill-tags`). Outputs distinct `.snps.vcf` and `.indels.vcf` files.
@@ -103,7 +103,9 @@ HapFun allows you to bypass expensive indexing steps by providing pre-built dire
 * `--caller`: `freebayes` (default), `gatk`, or `ensemble`
 * `--markdup_tool`: `bamsormadup` (default), `gatk`, `sambamba`, or `fastdup`
 * `--freebayes_mode`: `population` (default) or `individual`
+* `--freebayes_region_splitter`: Region splitting strategy for Freebayes fan-out: `fai` (default, fixed-size chunks from the FASTA index) or `bai` (coverage/data-aware chunks derived from BAM/BAI indexes).
 * `--freebayes_chunk_size`: Chunk size passed to `fasta_generate_regions.py` for splitting genomic regions in Freebayes population-mode. (Default: `100000`).
+* `--freebayes_cov_chunk`: Target cumulative BAI-backed data size per region when `--freebayes_region_splitter bai` is used. (Default: `100000000`).
 * `--caller ensemble` currently uses one fixed strategy: strict intersection of normalized GATK and Freebayes population calls, keeping the higher-QUAL record at each shared site.
 * `--error_estimate`: `false` (default) or `true`
 * `--popgen`: Run population genetics module (PCA + phylogenetic tree) from final cohort VCF and add to MultiQC (Default: `false`).
@@ -118,12 +120,16 @@ HapFun allows you to bypass expensive indexing steps by providing pre-built dire
 * `--bwa_args`: Additional arguments passed to BWA-mem2 (Default: empty).
 * `--bowtie2_args`: Additional arguments passed to Bowtie2 (Default: empty).
 * `--gatk_args`: Additional arguments passed to GATK HaplotypeCaller (Default: empty).
-* `--freebayes_args`: Additional arguments passed to Freebayes (Default: `--genotype-qualities`). Keep this flag enabled so `GQ` fields are emitted for downstream genotype-based filtering. In population mode, these arguments are forwarded to each chromosome-level `freebayes-parallel` task.
+* `--freebayes_args`: Additional arguments passed to Freebayes (Default: `--genotype-qualities --use-best-n-alleles 4`). Keep `--genotype-qualities` enabled so `GQ` fields are emitted for downstream genotype-based filtering. The default `--use-best-n-alleles 4` acts as a conservative runtime guard in low-complexity or ultra-high-coverage regions. In population mode, these arguments are forwarded to each chromosome-level Freebayes region fan-out task. Additional upstream tuning options are documented in the [Freebayes performance tuning guide](https://github.com/freebayes/freebayes?tab=readme-ov-file#performance-tuning).
 * Caller parallelism inside `FREEBAYES`, `FREEBAYES_POPULATION`, `FREEBAYES_CALL_LIB`, and `GATK_HAPLOTYPECALLER` now uses the full `task.cpus` allocation for each process.
 
 **VCF Filtering:**
 
 Note: Genotype-based filtering relies on valid `GQ` fields. By default, HapFun enables Freebayes `--genotype-qualities` (via `--freebayes_args`) so genotype qualities are emitted and filtering behaves as expected.
+
+Note: `--freebayes_region_splitter bai` uses a vendored implementation based on Freebayes' `split_ref_by_bai_datasize.py` interface, but adapted to run in HapFun's current container stack without NumPy or SciPy.
+
+Note: Each Freebayes task writes a `.freebayes_diagnostics/` directory containing per-region stderr logs, a `region_runtime.tsv` timing table, and a `slowest_regions.tsv` summary of the longest-running regions.
 
 Note: `--caller ensemble` currently requires `--freebayes_mode population` and is not supported together with `--error_estimate`.
 
@@ -149,6 +155,7 @@ Upon completion, the `--outdir` will contain the following structured directorie
         ├── merged/           # Raw aggregated VCF (if using individual mode)
         ├── population/       # Raw aggregated VCF from chromosome-parallel Freebayes population mode
         ├── ensemble/         # Raw ensemble VCF from shared GATK + Freebayes calls
+        ├── gatk/             # Joint-called raw GATK cohort VCF (used directly in `--caller gatk` and retained in `--caller ensemble`)
         └── filtered/         # FINAL processed VCFs (SNPs, Indels, and combined)
 ```
 

@@ -2,7 +2,7 @@ include { FASTP; FASTQC; TRIMMOMATIC } from '../modules/local/qc_tools'
 include { BWA_ALIGN; BOWTIE2_ALIGN; SAMTOOLS_SORT_ALIGN } from '../modules/local/aligners'
 include { DECOMPRESS_FASTA; SAMTOOLS_FAIDX; GATK_DICTIONARY; BWA_INDEX; BOWTIE2_INDEX } from '../modules/local/reference_prep'
 include { GFF_TO_BED } from '../modules/local/annotation_prep'
-include { FREEBAYES_SPLIT_REGIONS } from '../modules/local/genome_regions'
+include { FREEBAYES_SPLIT_REGIONS; FREEBAYES_SPLIT_REGIONS_BAI } from '../modules/local/genome_regions'
 include { SAMTOOLS_MERGE; MARK_DUPLICATES; MARK_DUPLICATES_BAMSORMADUP; MARK_DUPLICATES_SAMBAMBA; MARK_DUPLICATES_FASTDUP; QUALIMAP } from '../modules/local/bam_tools'
 include { FREEBAYES_POPULATION; FREEBAYES; GATK_HAPLOTYPECALLER; GATK_COMBINEGVCFS; GATK_GENOTYPEGVCFS } from '../modules/local/variant_callers'
 include { BCFTOOLS_MERGE; BCFTOOLS_CONCAT; VCF_ENSEMBLE_COMBINE } from '../modules/local/vcf_tools'
@@ -20,6 +20,7 @@ workflow HAPFUN {
     def valid_stop_steps = ['qc', 'alignment', 'call', 'filter', 'multiqc']
     def valid_markdup_tools = ['gatk', 'bamsormadup', 'sambamba', 'fastdup']
     def valid_callers = ['freebayes', 'gatk', 'ensemble']
+    def valid_freebayes_region_splitters = ['fai', 'bai']
 
     if (!valid_start_steps.contains(params.start_step)) {
         error "Invalid --start_step '${params.start_step}'. Supported values: ${valid_start_steps.join(', ')}"
@@ -33,6 +34,9 @@ workflow HAPFUN {
     if (!valid_callers.contains(params.caller)) {
         error "Invalid --caller '${params.caller}'. Supported values: ${valid_callers.join(', ')}"
     }
+    if (!valid_freebayes_region_splitters.contains(params.freebayes_region_splitter)) {
+        error "Invalid --freebayes_region_splitter '${params.freebayes_region_splitter}'. Supported values: ${valid_freebayes_region_splitters.join(', ')}"
+    }
     if (params.caller == 'ensemble' && params.freebayes_mode != 'population') {
         error "--caller ensemble currently requires --freebayes_mode population"
     }
@@ -41,6 +45,9 @@ workflow HAPFUN {
     }
     if ((params.freebayes_chunk_size as Integer) < 1) {
         error "Invalid --freebayes_chunk_size '${params.freebayes_chunk_size}'. Value must be >= 1"
+    }
+    if ((params.freebayes_cov_chunk as Long) < 1) {
+        error "Invalid --freebayes_cov_chunk '${params.freebayes_cov_chunk}'. Value must be >= 1"
     }
     if (step_order[params.start_step] > step_order[params.stop_at]) {
         error "Invalid step window: --start_step '${params.start_step}' occurs after --stop_at '${params.stop_at}'"
@@ -94,6 +101,7 @@ workflow HAPFUN {
     ch_multiqc_logo   = file("$projectDir/assets/hapfun.png")
     ch_vcf_compare_script = Channel.value(file("$projectDir/bin/vcf_multi_compare.py"))
     ch_popgen_script = Channel.value(file("$projectDir/bin/popgen_analyses.py"))
+    ch_freebayes_bai_split_script = Channel.value(file("$projectDir/bin/split_ref_by_bai_datasize.py"))
 
     // --- STEP 1: QC ---
     if (params.start_step == 'qc') {
@@ -199,7 +207,7 @@ workflow HAPFUN {
             GATK_CALL_LIB(ch_error_dedup_bam, ch_ref, ch_ref_fai, ch_ref_dict)
             ch_lib_vcfs = GATK_CALL_LIB.out.vcf
         } else {
-            FREEBAYES_CALL_LIB(ch_error_dedup_bam, ch_ref, ch_ref_fai)
+            FREEBAYES_CALL_LIB(ch_error_dedup_bam, ch_ref, ch_ref_fai, ch_freebayes_bai_split_script)
             ch_lib_vcfs = FREEBAYES_CALL_LIB.out.vcf
         }
 
@@ -300,22 +308,39 @@ workflow HAPFUN {
         // Collect cohort BAM/BAI files into separate channels.
         // Wrap each collected list in a one-element list so combine keeps
         // each payload as one field instead of flattening list elements.
-        ch_population_bams = ch_dedup_bam_for_call
+        ch_population_bams_raw = ch_dedup_bam_for_call
             .map { meta, bam, bai -> bam }
             .collect()
+
+        ch_population_bams = ch_population_bams_raw
             .map { bams -> [bams] }
 
-        ch_population_bais = ch_dedup_bam_for_call
+        ch_population_bais_raw = ch_dedup_bam_for_call
             .map { meta, bam, bai -> bai }
             .collect()
+
+        ch_population_bais = ch_population_bais_raw
             .map { bais -> [bais] }
 
-        FREEBAYES_SPLIT_REGIONS(
-            ch_ref_fai,
-            Channel.value(params.freebayes_chunk_size)
-        )
+        def ch_population_region_files
+        if (params.freebayes_region_splitter == 'bai') {
+            FREEBAYES_SPLIT_REGIONS_BAI(
+                ch_ref_fai,
+                Channel.value(params.freebayes_cov_chunk),
+                ch_population_bams_raw,
+                ch_population_bais_raw,
+                ch_freebayes_bai_split_script
+            )
+            ch_population_region_files = FREEBAYES_SPLIT_REGIONS_BAI.out.regions
+        } else {
+            FREEBAYES_SPLIT_REGIONS(
+                ch_ref_fai,
+                Channel.value(params.freebayes_chunk_size)
+            )
+            ch_population_region_files = FREEBAYES_SPLIT_REGIONS.out.regions
+        }
 
-        ch_population_regions = FREEBAYES_SPLIT_REGIONS.out.regions
+        ch_population_regions = ch_population_region_files
             .flatten()
             .map { region_file ->
                 def chrom = region_file.baseName.replaceAll(/\.regions$/, '')
@@ -349,22 +374,39 @@ workflow HAPFUN {
         
     } else if (params.caller == 'ensemble') {
         // --- Freebayes population arm ---
-        ch_ens_population_bams = ch_dedup_bam_for_call
+        ch_ens_population_bams_raw = ch_dedup_bam_for_call
             .map { meta, bam, bai -> bam }
             .collect()
+
+        ch_ens_population_bams = ch_ens_population_bams_raw
             .map { bams -> [bams] }
 
-        ch_ens_population_bais = ch_dedup_bam_for_call
+        ch_ens_population_bais_raw = ch_dedup_bam_for_call
             .map { meta, bam, bai -> bai }
             .collect()
+
+        ch_ens_population_bais = ch_ens_population_bais_raw
             .map { bais -> [bais] }
 
-        FREEBAYES_SPLIT_REGIONS(
-            ch_ref_fai,
-            Channel.value(params.freebayes_chunk_size)
-        )
+        def ch_ens_region_files
+        if (params.freebayes_region_splitter == 'bai') {
+            FREEBAYES_SPLIT_REGIONS_BAI(
+                ch_ref_fai,
+                Channel.value(params.freebayes_cov_chunk),
+                ch_ens_population_bams_raw,
+                ch_ens_population_bais_raw,
+                ch_freebayes_bai_split_script
+            )
+            ch_ens_region_files = FREEBAYES_SPLIT_REGIONS_BAI.out.regions
+        } else {
+            FREEBAYES_SPLIT_REGIONS(
+                ch_ref_fai,
+                Channel.value(params.freebayes_chunk_size)
+            )
+            ch_ens_region_files = FREEBAYES_SPLIT_REGIONS.out.regions
+        }
 
-        ch_ens_regions = FREEBAYES_SPLIT_REGIONS.out.regions
+        ch_ens_regions = ch_ens_region_files
             .flatten()
             .map { region_file ->
                 def chrom = region_file.baseName.replaceAll(/\.regions$/, '')
@@ -413,7 +455,50 @@ workflow HAPFUN {
 
     } else {
         // Fallback: Individual Freebayes calling & standard merging
-        FREEBAYES(ch_dedup_bam_for_call, ch_ref, ch_ref_fai)
+        ch_individual_bams_raw = ch_dedup_bam_for_call
+            .map { meta, bam, bai -> bam }
+            .collect()
+
+        ch_individual_bais_raw = ch_dedup_bam_for_call
+            .map { meta, bam, bai -> bai }
+            .collect()
+
+        def ch_individual_region_files
+        if (params.freebayes_region_splitter == 'bai') {
+            FREEBAYES_SPLIT_REGIONS_BAI(
+                ch_ref_fai,
+                Channel.value(params.freebayes_cov_chunk),
+                ch_individual_bams_raw,
+                ch_individual_bais_raw,
+                ch_freebayes_bai_split_script
+            )
+            ch_individual_region_files = FREEBAYES_SPLIT_REGIONS_BAI.out.regions
+        } else {
+            FREEBAYES_SPLIT_REGIONS(
+                ch_ref_fai,
+                Channel.value(params.freebayes_chunk_size)
+            )
+            ch_individual_region_files = FREEBAYES_SPLIT_REGIONS.out.regions
+        }
+
+        ch_individual_region_bundle = ch_individual_region_files
+            .flatten()
+            .collect()
+            .map { region_files -> [region_files] }
+
+        ch_individual_jobs = ch_dedup_bam_for_call
+            .combine(ch_individual_region_bundle)
+            .combine(ch_ref)
+            .map { row ->
+                def meta = row[0]
+                def bam = row[1]
+                def bai = row[2]
+                def region_files = row[3]
+                def ref = row[4]
+                tuple(meta, bam, bai, region_files, ref)
+            }
+
+        FREEBAYES(ch_individual_jobs)
         BCFTOOLS_MERGE(FREEBAYES.out.vcf.collect(), FREEBAYES.out.tbi.collect())
         ch_final_vcf = BCFTOOLS_MERGE.out.vcf.map { vcf -> tuple([id: "merged"], vcf) }
     }

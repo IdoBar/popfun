@@ -31,16 +31,28 @@
           "description": "Duplicate marking tool. 'gatk' uses GATK MarkDuplicates; 'bamsormadup' uses biobambam bamsormadup; 'sambamba' uses sambamba markdup; 'fastdup' uses FastDup (Picard-compatible, faster)."
         },
         "freebayes_mode": { "type": "string", "enum": ["individual", "population"], "default": "population" },
+        "freebayes_region_splitter": {
+          "type": "string",
+          "enum": ["fai", "bai"],
+          "default": "fai",
+          "description": "How to split regions for Freebayes parallel region fan-out: fixed-size FASTA chunks ('fai') or BAI data-aware regions ('bai')."
+        },
         "freebayes_chunk_size": {
           "type": "integer",
           "default": 100000,
           "minimum": 1,
           "description": "Chunk size passed to fasta_generate_regions.py for Freebayes population-mode sharding."
         },
+        "freebayes_cov_chunk": {
+          "type": "integer",
+          "default": 100000000,
+          "minimum": 1,
+          "description": "Target cumulative BAI-backed data size per region when freebayes_region_splitter is set to 'bai'."
+        },
         "freebayes_args": {
           "type": "string",
-          "default": "--genotype-qualities",
-          "description": "Additional arguments passed to Freebayes. Includes --genotype-qualities by default so GQ fields are emitted for downstream filtering."
+          "default": "--genotype-qualities --use-best-n-alleles 4",
+          "description": "Additional arguments passed to Freebayes. Includes --genotype-qualities by default so GQ fields are emitted for downstream filtering, plus --use-best-n-alleles 4 as a conservative performance guard in problematic low-complexity or ultra-high-coverage regions."
         }
       }
     },

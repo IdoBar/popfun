@@ -99,6 +99,7 @@ process GATK_CALL_LIB {
     tuple val(meta), path(bam), path(bai)
     path ref
     path ref_idx 
+    path bai_split_script
     path ref_dict 
 
     output:
@@ -125,18 +126,85 @@ process FREEBAYES_CALL_LIB {
     tuple val(meta), path(bam), path(bai)
     path ref
     path ref_idx
+    path bai_split_script
 
     output:
     tuple val(meta), path("*.vcf.gz"), path("*.vcf.gz.tbi"), emit: vcf
+    path "${meta.unit_id ?: meta.library ?: meta.id}.freebayes_diagnostics", emit: diagnostics
 
     script:
     def args = task.ext.args ?: ''
     def threads = Math.max(1, (task.cpus ?: 1) as Integer)
     def unitId = meta.unit_id ?: meta.library ?: meta.id
+    def regionSplitter = (params.freebayes_region_splitter ?: 'fai').toString().trim()
+    def covChunk = params.freebayes_cov_chunk.toString().trim()
+    def diagnosticsDir = "${unitId}.freebayes_diagnostics"
     """
-    awk '{ print \$1 ":1-" \$2 }' $ref_idx > chromosome_regions.txt
+    set -euo pipefail
 
-    freebayes-parallel chromosome_regions.txt ${threads} -f $ref -p ${params.ploidy} $args $bam | bgzip -c > ${unitId}.vcf.gz
+    if [ "${regionSplitter}" = 'bai' ]; then
+        mkdir -p bam_inputs
+        ln -sf $bam bam_inputs/input.bam
+        ln -sf $bai bam_inputs/input.bam.bai
+        python3 "$bai_split_script" -r $ref_idx -s ${covChunk} bam_inputs/input.bam \
+            | awk 'BEGIN{OFS=""} \$3 > \$2 { print \$1 ":" (\$2 + 1) "-" \$3 }' > chromosome_regions.txt
+    else
+        awk '{ print \$1 ":1-" \$2 }' $ref_idx > chromosome_regions.txt
+    fi
+
+    [ -s chromosome_regions.txt ] || { echo 'No Freebayes regions generated' >&2; exit 1; }
+
+    mkdir -p chunks ${diagnosticsDir}/stderr ${diagnosticsDir}/metrics
+    export NF_REF="$ref"
+    export NF_PLOIDY="${params.ploidy}"
+    export NF_ARGS="${args}"
+    export NF_BAM="$bam"
+    export NF_DIAG_DIR="${diagnosticsDir}"
+
+    set +e
+    awk 'NF { printf "%s chunks/%08d.vcf\n", \$0, NR }' chromosome_regions.txt \
+        | xargs -r -n 2 -P ${threads} sh -c '
+            region="\$1"
+            chunk_vcf="\$2"
+            chunk_id=\$(basename "\${chunk_vcf%.vcf}")
+            stderr_log="\$NF_DIAG_DIR/stderr/\${chunk_id}.stderr.log"
+            metric_file="\$NF_DIAG_DIR/metrics/\${chunk_id}.tsv"
+            start_epoch=\$(date +%s)
+            freebayes -f "\$NF_REF" -p "\$NF_PLOIDY" \$NF_ARGS "\$NF_BAM" --region "\$region" > "\$chunk_vcf" 2> "\$stderr_log"
+            status=\$?
+            end_epoch=\$(date +%s)
+            duration_seconds=\$((end_epoch - start_epoch))
+            printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" \
+                "\$chunk_id" "\$region" "\$status" "\$start_epoch" "\$end_epoch" "\$duration_seconds" "\$chunk_vcf" "\$stderr_log" > "\$metric_file"
+            exit "\$status"
+        ' sh
+    xargs_status=\$?
+    set -e
+
+    find ${diagnosticsDir}/metrics -type f -name '*.tsv' | LC_ALL=C sort > metric_files.list
+    [ -s metric_files.list ] || { echo 'No Freebayes diagnostic metrics were produced' >&2; exit 1; }
+
+    printf 'chunk_id\tregion\texit_status\tstart_epoch\tend_epoch\tduration_seconds\tvcf_path\tstderr_log\n' > ${diagnosticsDir}/region_runtime.tsv
+    xargs cat < metric_files.list >> ${diagnosticsDir}/region_runtime.tsv
+
+    printf 'chunk_id\tregion\texit_status\tstart_epoch\tend_epoch\tduration_seconds\tvcf_path\tstderr_log\n' > ${diagnosticsDir}/slowest_regions.tsv
+    tail -n +2 ${diagnosticsDir}/region_runtime.tsv | LC_ALL=C sort -t "\$(printf '\t')" -k6,6nr | head -n 10 >> ${diagnosticsDir}/slowest_regions.tsv
+
+    if [ "\$xargs_status" -ne 0 ]; then
+        echo 'One or more Freebayes chunk calls failed; see freebayes diagnostics for details' >&2
+        exit "\$xargs_status"
+    fi
+
+    find chunks -type f -name '*.vcf' | LC_ALL=C sort > chunk_vcfs.list
+    [ -s chunk_vcfs.list ] || { echo 'No Freebayes chunk outputs were produced' >&2; exit 1; }
+
+    first_chunk=\$(head -n 1 chunk_vcfs.list)
+    {
+        vcffirstheader "\$first_chunk"
+        xargs cat < chunk_vcfs.list | grep -hv '^#' || true
+    } | vcfstreamsort -w 1000 | vcfuniq > merged.vcf
+
+    bgzip -c merged.vcf > ${unitId}.vcf.gz
     tabix -p vcf ${unitId}.vcf.gz
     """
 }
