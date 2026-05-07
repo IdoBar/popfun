@@ -21,6 +21,16 @@ workflow HAPFUN {
     def valid_markdup_tools = ['gatk', 'bamsormadup', 'sambamba', 'fastdup']
     def valid_callers = ['freebayes', 'gatk', 'ensemble']
     def valid_freebayes_region_splitters = ['fai', 'bai']
+    def parseWholeNumberParam = { value, name ->
+        try {
+            def parsed = new BigDecimal(value.toString().trim())
+            return parsed.longValueExact()
+        } catch (NumberFormatException | ArithmeticException ignored) {
+            error "Invalid --${name} '${value}'. Value must be a whole number >= 1"
+        }
+    }
+
+    def freebayesCovChunk = parseWholeNumberParam(params.freebayes_cov_chunk, 'freebayes_cov_chunk')
 
     if (!valid_start_steps.contains(params.start_step)) {
         error "Invalid --start_step '${params.start_step}'. Supported values: ${valid_start_steps.join(', ')}"
@@ -46,7 +56,7 @@ workflow HAPFUN {
     if ((params.freebayes_chunk_size as Integer) < 1) {
         error "Invalid --freebayes_chunk_size '${params.freebayes_chunk_size}'. Value must be >= 1"
     }
-    if ((params.freebayes_cov_chunk as Long) < 1) {
+    if (freebayesCovChunk < 1) {
         error "Invalid --freebayes_cov_chunk '${params.freebayes_cov_chunk}'. Value must be >= 1"
     }
     if (step_order[params.start_step] > step_order[params.stop_at]) {
@@ -351,7 +361,7 @@ workflow HAPFUN {
         if (params.freebayes_region_splitter == 'bai') {
             FREEBAYES_SPLIT_REGIONS_BAI(
                 ch_ref_fai,
-                Channel.value(params.freebayes_cov_chunk),
+                Channel.value(freebayesCovChunk),
                 ch_population_bams_raw,
                 ch_population_bais_raw,
                 ch_freebayes_bai_split_script
@@ -417,7 +427,7 @@ workflow HAPFUN {
         if (params.freebayes_region_splitter == 'bai') {
             FREEBAYES_SPLIT_REGIONS_BAI(
                 ch_ref_fai,
-                Channel.value(params.freebayes_cov_chunk),
+                Channel.value(freebayesCovChunk),
                 ch_ens_population_bams_raw,
                 ch_ens_population_bais_raw,
                 ch_freebayes_bai_split_script
@@ -492,7 +502,7 @@ workflow HAPFUN {
         if (params.freebayes_region_splitter == 'bai') {
             FREEBAYES_SPLIT_REGIONS_BAI(
                 ch_ref_fai,
-                Channel.value(params.freebayes_cov_chunk),
+                Channel.value(freebayesCovChunk),
                 ch_individual_bams_raw,
                 ch_individual_bais_raw,
                 ch_freebayes_bai_split_script
