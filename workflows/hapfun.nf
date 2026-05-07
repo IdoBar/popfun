@@ -54,7 +54,32 @@ workflow HAPFUN {
     }
     
     // 1. INPUT PARSING
-    ch_input = Channel.fromPath(params.input).splitCsv(header:true).map { row ->
+    def samplesheetFile = file(params.input)
+    def resolveSamplesheetPath = { rawPath ->
+        def pathText = rawPath == null ? '' : rawPath.toString().trim()
+        if (!pathText) {
+            return file(pathText)
+        }
+
+        def directPath = file(pathText)
+        if (directPath.exists()) {
+            return directPath
+        }
+
+        def samplesheetRelativePath = samplesheetFile.parent ? file("${samplesheetFile.parent}/${pathText}") : null
+        if (samplesheetRelativePath?.exists()) {
+            return samplesheetRelativePath
+        }
+
+        def projectRelativePath = file("${projectDir}/${pathText}")
+        if (projectRelativePath.exists()) {
+            return projectRelativePath
+        }
+
+        return samplesheetRelativePath ?: projectRelativePath
+    }
+
+    ch_input = Channel.fromPath(samplesheetFile).splitCsv(header:true).map { row ->
         def norm = row.collectEntries { key, value ->
             def normKey = key == null ? null : key.toString().trim().toLowerCase()
             def normValue = value == null ? '' : value.toString().trim()
@@ -78,9 +103,9 @@ workflow HAPFUN {
         }
 
         def meta = [ id: sampleId, library: libraryId, unit_id: libraryId, pop: (norm.pop ?: 'NA'), single_end: false ]
-        tuple(meta, file(fq1), file(fq2))
+        tuple(meta, resolveSamplesheetPath(fq1), resolveSamplesheetPath(fq2))
     }
-    ch_samplesheet = Channel.value(file(params.input))
+    ch_samplesheet = Channel.value(samplesheetFile)
     
     def ref_file = file(params.ref)
     def ref_is_gz = ref_file.name.toLowerCase().endsWith('.gz')
