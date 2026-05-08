@@ -210,6 +210,8 @@ process FREEBAYES_CALL_LIB {
 
     bgzip -c merged.vcf > ${unitId}.vcf.gz
     tabix -p vcf ${unitId}.vcf.gz
+    rm -f merged.vcf chunk_vcfs.list
+    rm -rf chunks
     """
 }
 

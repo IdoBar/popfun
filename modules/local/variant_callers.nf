@@ -78,6 +78,8 @@ process FREEBAYES {
 
     bgzip -c merged.vcf > ${meta.id}.vcf.gz
     tabix -p vcf ${meta.id}.vcf.gz
+    rm -f merged.vcf chunk_vcfs.list
+    rm -rf chunks
     """
 }
 
@@ -157,6 +159,8 @@ process FREEBAYES_POPULATION {
 
     bgzip -c merged.vcf > ${meta.id}.vcf.gz
     tabix -p vcf ${meta.id}.vcf.gz
+    rm -f merged.vcf chunk_vcfs.list
+    rm -rf chunks
     """
 }
 
