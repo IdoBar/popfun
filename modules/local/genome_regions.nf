@@ -92,7 +92,7 @@ process FREEBAYES_COVERAGE_MOSDEPTH {
 process FREEBAYES_SPLIT_REGIONS_COVERAGE {
     label 'sc_small'
     conda "conda-forge::python=3.11"
-    container 'python:3.11-slim'
+    container 'python:3.11'
     input:
         path ref_idx
         val target_region_count
@@ -128,7 +128,7 @@ process FREEBAYES_SPLIT_REGIONS_COVERAGE {
 process FREEBAYES_SPLIT_REGIONS_MOSDEPTH {
     label 'sc_small'
     conda "conda-forge::python=3.11"
-    container 'python:3.11-slim'
+    container 'python:3.11'
     input:
         path ref_idx
         val target_region_count
