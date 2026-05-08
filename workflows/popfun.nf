@@ -70,19 +70,27 @@ workflow POPFUN {
     def validateFreebayesRegionFiles = { regionFilesChannel ->
         regionFilesChannel.map { regionFiles ->
             def stagedRegionFiles = regionFiles instanceof Collection ? regionFiles : [regionFiles]
-            long totalRegions = 0L
+            long maxRegionsInFile = 0L
+            def largestRegionFile = null
 
             stagedRegionFiles.each { regionFile ->
+                long regionsInFile = 0L
                 regionFile.eachLine { line ->
                     if (line.toString().trim()) {
-                        totalRegions++
+                        regionsInFile++
                     }
+                }
+
+                if (regionsInFile > maxRegionsInFile) {
+                    maxRegionsInFile = regionsInFile
+                    largestRegionFile = regionFile
                 }
             }
 
-            if (totalRegions > freebayesMaxChunks) {
+            if (maxRegionsInFile > freebayesMaxChunks) {
                 def sizeParam = params.freebayes_region_splitter == 'bai' ? '--freebayes_cov_chunk' : '--freebayes_chunk_size'
-                error "Freebayes region generation produced ${totalRegions} target regions, which exceeds --freebayes_max_chunks ${freebayesMaxChunks}. Increase ${sizeParam} or use the default values."
+                def regionFileName = largestRegionFile?.getName() ?: 'unknown'
+                error "Freebayes region generation produced ${maxRegionsInFile} target regions in ${regionFileName}, which exceeds --freebayes_max_chunks ${freebayesMaxChunks}. Increase ${sizeParam} or use the default values."
             }
 
             regionFiles
