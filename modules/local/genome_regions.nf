@@ -64,3 +64,119 @@ process FREEBAYES_SPLIT_REGIONS_BAI {
     done < chrom_list.txt
     """
 }
+
+process FREEBAYES_COVERAGE_SAMBAMBA {
+    label 'sc_small'
+    conda "bioconda::sambamba=1.0.1"
+    container 'quay.io/biocontainers/sambamba:1.0.1--h6f6fda4_1'
+    input:
+        path bams
+    output:
+        path 'coverage.tsv', emit: coverage
+    script:
+    """
+    set -euo pipefail
+
+    find -L . -maxdepth 1 -type f -name '*.bam' | LC_ALL=C sort > bam_paths.txt
+    [ -s bam_paths.txt ] || { echo 'No staged BAM inputs discovered for FREEBAYES_COVERAGE_SAMBAMBA' >&2; exit 1; }
+
+    mapfile -t bam_args < bam_paths.txt
+    sambamba depth base "\${bam_args[@]}" \
+        | awk 'BEGIN{OFS="\t"} NR > 1 && NF >= 3 { print \$1, \$2, \$3 }' > coverage.tsv
+
+    [ -s coverage.tsv ] || { echo 'No coverage rows were produced by Sambamba depth base' >&2; exit 1; }
+    """
+}
+
+process FREEBAYES_COVERAGE_MOSDEPTH {
+    label 'sc_small'
+    conda "bioconda::mosdepth=0.3.14"
+    container 'quay.io/biocontainers/mosdepth:0.3.14--h05c3d44_0'
+    input:
+        path bams
+    output:
+        path 'mosdepth/*.per-base.bed.gz', emit: per_base
+    script:
+    """
+    set -euo pipefail
+
+    find -L . -maxdepth 1 -type f -name '*.bam' | LC_ALL=C sort > bam_paths.txt
+    [ -s bam_paths.txt ] || { echo 'No staged BAM inputs discovered for FREEBAYES_COVERAGE_MOSDEPTH' >&2; exit 1; }
+
+    mkdir -p mosdepth
+    while IFS= read -r bam_path; do
+        prefix="mosdepth/\$(basename "\${bam_path%.bam}")"
+        mosdepth --fast-mode --threads 1 "\$prefix" "\$bam_path"
+    done < bam_paths.txt
+
+    find mosdepth -type f -name '*.per-base.bed.gz' | LC_ALL=C sort > per_base_files.list
+    [ -s per_base_files.list ] || { echo 'No mosdepth per-base BED outputs were produced' >&2; exit 1; }
+    """
+}
+
+process FREEBAYES_SPLIT_REGIONS_COVERAGE {
+    label 'sc_small'
+    conda "conda-forge::python=3.11"
+    container 'ghcr.io/idobar/popfun-bai-splitter@sha256:d9843bedf744e928c669b6b00ecd6d05d5652ab80adaf0638b4e68d32dc280fe'
+    input:
+        path ref_idx
+        val target_region_count
+        path coverage
+        path split_script
+    output:
+        path 'regions/*.regions.txt', emit: regions
+    script:
+    def target = target_region_count.toString().trim()
+    """
+    set -euo pipefail
+
+    mkdir -p regions
+
+    python3 "$split_script" "$ref_idx" ${target} < "$coverage" > target_regions.txt
+    [ -s target_regions.txt ] || { echo 'No coverage-balanced target regions were produced' >&2; exit 1; }
+
+    cut -f1 "$ref_idx" > chrom_list.txt
+    while IFS= read -r chrom; do
+        awk -v chr="\$chrom" -F '[:[:space:]]+' '\$1 == chr { print \$0 }' target_regions.txt > "regions/\${chrom}.regions.txt"
+        if [ ! -s "regions/\${chrom}.regions.txt" ]; then
+            awk -v chr="\$chrom" '\$1 == chr { printf "%s:1-%s\\n", \$1, \$2 }' "$ref_idx" > "regions/\${chrom}.regions.txt"
+        fi
+    done < chrom_list.txt
+    """
+}
+
+process FREEBAYES_SPLIT_REGIONS_MOSDEPTH {
+    label 'sc_small'
+    conda "conda-forge::python=3.11"
+    container 'ghcr.io/idobar/popfun-bai-splitter@sha256:d9843bedf744e928c669b6b00ecd6d05d5652ab80adaf0638b4e68d32dc280fe'
+    input:
+        path ref_idx
+        val target_region_count
+        path per_base_files
+        path mosdepth_script
+        path split_script
+    output:
+        path 'regions/*.regions.txt', emit: regions
+    script:
+    def target = target_region_count.toString().trim()
+    """
+    set -euo pipefail
+
+    mkdir -p regions
+
+    find -L . -type f -name '*.per-base.bed.gz' | LC_ALL=C sort > per_base_files.list
+    [ -s per_base_files.list ] || { echo 'No staged mosdepth per-base BED inputs discovered' >&2; exit 1; }
+
+    python3 "$mosdepth_script" "$ref_idx" \$(cat per_base_files.list) \
+        | python3 "$split_script" "$ref_idx" ${target} > target_regions.txt
+    [ -s target_regions.txt ] || { echo 'No coverage-balanced target regions were produced from mosdepth intervals' >&2; exit 1; }
+
+    cut -f1 "$ref_idx" > chrom_list.txt
+    while IFS= read -r chrom; do
+        awk -v chr="\$chrom" -F '[:[:space:]]+' '\$1 == chr { print \$0 }' target_regions.txt > "regions/\${chrom}.regions.txt"
+        if [ ! -s "regions/\${chrom}.regions.txt" ]; then
+            awk -v chr="\$chrom" '\$1 == chr { printf "%s:1-%s\\n", \$1, \$2 }' "$ref_idx" > "regions/\${chrom}.regions.txt"
+        fi
+    done < chrom_list.txt
+    """
+}

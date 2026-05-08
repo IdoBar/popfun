@@ -33,9 +33,9 @@
         "freebayes_mode": { "type": "string", "enum": ["individual", "population"], "default": "population" },
         "freebayes_region_splitter": {
           "type": "string",
-          "enum": ["fai", "bai"],
+          "enum": ["fai", "bai", "coverage"],
           "default": "fai",
-          "description": "How to split regions for Freebayes parallel region fan-out: fixed-size FASTA chunks ('fai') or BAI data-aware regions ('bai')."
+          "description": "How to split regions for Freebayes parallel region fan-out: fixed-size FASTA chunks ('fai'), BAI data-aware regions ('bai'), or coverage-balanced regions ('coverage')."
         },
         "freebayes_chunk_size": {
           "type": "integer",
@@ -49,11 +49,23 @@
           "minimum": 1,
           "description": "Target cumulative BAI-backed data size per region when freebayes_region_splitter is set to 'bai'."
         },
+        "freebayes_coverage_backend": {
+          "type": "string",
+          "enum": ["sambamba", "mosdepth"],
+          "default": "sambamba",
+          "description": "Coverage backend used when freebayes_region_splitter is set to 'coverage'. 'sambamba' uses sambamba depth base directly across all staged BAMs. 'mosdepth' is a prototype path that converts mosdepth per-base intervals back into the coverage stream expected by the vendored Freebayes helper."
+        },
+        "freebayes_coverage_regions": {
+          "type": "integer",
+          "default": 500,
+          "minimum": 1,
+          "description": "Target number of coverage-balanced regions to generate when freebayes_region_splitter is set to 'coverage'."
+        },
         "freebayes_max_chunks": {
           "type": "integer",
           "default": 2000,
           "minimum": 1,
-          "description": "Maximum total number of Freebayes target regions allowed after region generation. The workflow aborts if this limit is exceeded so chunk sizes can be increased before fan-out creates too many tiny tasks."
+          "description": "Maximum number of Freebayes target regions allowed in the largest generated per-chromosome region file. The workflow aborts if this limit is exceeded so chunk sizes can be increased before fan-out creates too many tiny tasks."
         },
         "freebayes_args": {
           "type": "string",
