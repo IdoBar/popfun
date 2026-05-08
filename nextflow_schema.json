@@ -33,21 +33,15 @@
         "freebayes_mode": { "type": "string", "enum": ["individual", "population"], "default": "population" },
         "freebayes_region_splitter": {
           "type": "string",
-          "enum": ["fai", "bai", "coverage"],
+          "enum": ["fai", "coverage"],
           "default": "fai",
-          "description": "How to split regions for Freebayes parallel region fan-out: fixed-size FASTA chunks ('fai'), BAI data-aware regions ('bai'), or coverage-balanced regions ('coverage')."
+          "description": "How to split regions for Freebayes parallel region fan-out: fixed-size FASTA chunks ('fai') or coverage-balanced regions ('coverage')."
         },
         "freebayes_chunk_size": {
           "type": "integer",
           "default": 100000,
           "minimum": 1,
           "description": "Chunk size passed to fasta_generate_regions.py for Freebayes population-mode sharding."
-        },
-        "freebayes_cov_chunk": {
-          "type": "integer",
-          "default": 1e8,
-          "minimum": 1,
-          "description": "Target cumulative BAI-backed data size per region when freebayes_region_splitter is set to 'bai'."
         },
         "freebayes_coverage_backend": {
           "type": "string",

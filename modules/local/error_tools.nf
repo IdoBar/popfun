@@ -126,7 +126,6 @@ process FREEBAYES_CALL_LIB {
     tuple val(meta), path(bam), path(bai)
     path ref
     path ref_idx
-    path bai_split_script
 
     output:
     tuple val(meta), path("*.vcf.gz"), path("*.vcf.gz.tbi"), emit: vcf
@@ -136,22 +135,12 @@ process FREEBAYES_CALL_LIB {
     def args = task.ext.args ?: ''
     def threads = Math.max(1, (task.cpus ?: 1) as Integer)
     def unitId = meta.unit_id ?: meta.library ?: meta.id
-    def regionSplitter = (params.freebayes_region_splitter ?: 'fai').toString().trim()
-    def covChunk = params.freebayes_cov_chunk.toString().trim()
     def diagnosticsDir = "${unitId}.freebayes_diagnostics"
     def debugEnabled = params.freebayes_debug ? 'true' : 'false'
     """
     set -euo pipefail
 
-    if [ "${regionSplitter}" = 'bai' ]; then
-        mkdir -p bam_inputs
-        ln -sf $bam bam_inputs/input.bam
-        ln -sf $bai bam_inputs/input.bam.bai
-        python3 "$bai_split_script" -r $ref_idx -s ${covChunk} bam_inputs/input.bam \
-            | awk 'BEGIN{OFS=""} \$3 > \$2 { print \$1 ":" (\$2 + 1) "-" \$3 }' > chromosome_regions.txt
-    else
-        awk '{ print \$1 ":1-" \$2 }' $ref_idx > chromosome_regions.txt
-    fi
+    awk '{ print \$1 ":1-" \$2 }' $ref_idx > chromosome_regions.txt
 
     [ -s chromosome_regions.txt ] || { echo 'No Freebayes regions generated' >&2; exit 1; }
 

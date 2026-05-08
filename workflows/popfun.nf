@@ -2,7 +2,7 @@ include { FASTP; FASTQC; TRIMMOMATIC } from '../modules/local/qc_tools'
 include { BWA_ALIGN; BOWTIE2_ALIGN; SAMTOOLS_SORT_ALIGN } from '../modules/local/aligners'
 include { DECOMPRESS_FASTA; SAMTOOLS_FAIDX; GATK_DICTIONARY; BWA_INDEX; BOWTIE2_INDEX } from '../modules/local/reference_prep'
 include { GFF_TO_BED } from '../modules/local/annotation_prep'
-include { FREEBAYES_SPLIT_REGIONS; FREEBAYES_SPLIT_REGIONS_BAI; FREEBAYES_COVERAGE_SAMBAMBA; FREEBAYES_COVERAGE_MOSDEPTH; FREEBAYES_SPLIT_REGIONS_COVERAGE; FREEBAYES_SPLIT_REGIONS_MOSDEPTH } from '../modules/local/genome_regions'
+include { FREEBAYES_SPLIT_REGIONS; FREEBAYES_COVERAGE_SAMBAMBA; FREEBAYES_COVERAGE_MOSDEPTH; FREEBAYES_SPLIT_REGIONS_COVERAGE; FREEBAYES_SPLIT_REGIONS_MOSDEPTH } from '../modules/local/genome_regions'
 include { SAMTOOLS_MERGE; MARK_DUPLICATES; MARK_DUPLICATES_BAMSORMADUP; MARK_DUPLICATES_SAMBAMBA; MARK_DUPLICATES_FASTDUP; QUALIMAP } from '../modules/local/bam_tools'
 include { FREEBAYES_POPULATION; FREEBAYES; GATK_HAPLOTYPECALLER; GATK_COMBINEGVCFS; GATK_GENOTYPEGVCFS } from '../modules/local/variant_callers'
 include { BCFTOOLS_MERGE; BCFTOOLS_CONCAT; VCF_ENSEMBLE_COMBINE } from '../modules/local/vcf_tools'
@@ -20,7 +20,7 @@ workflow POPFUN {
     def valid_stop_steps = ['qc', 'alignment', 'call', 'filter', 'multiqc']
     def valid_markdup_tools = ['gatk', 'bamsormadup', 'sambamba', 'fastdup']
     def valid_callers = ['freebayes', 'gatk', 'ensemble']
-    def valid_freebayes_region_splitters = ['fai', 'bai', 'coverage']
+    def valid_freebayes_region_splitters = ['fai', 'coverage']
     def valid_freebayes_coverage_backends = ['sambamba', 'mosdepth']
     def parseWholeNumberParam = { value, name ->
         try {
@@ -31,7 +31,6 @@ workflow POPFUN {
         }
     }
 
-    def freebayesCovChunk = parseWholeNumberParam(params.freebayes_cov_chunk, 'freebayes_cov_chunk')
     def freebayesCoverageRegions = parseWholeNumberParam(params.freebayes_coverage_regions, 'freebayes_coverage_regions')
     def freebayesMaxChunks = parseWholeNumberParam(params.freebayes_max_chunks, 'freebayes_max_chunks')
 
@@ -61,9 +60,6 @@ workflow POPFUN {
     }
     if ((params.freebayes_chunk_size as Integer) < 1) {
         error "Invalid --freebayes_chunk_size '${params.freebayes_chunk_size}'. Value must be >= 1"
-    }
-    if (freebayesCovChunk < 1) {
-        error "Invalid --freebayes_cov_chunk '${params.freebayes_cov_chunk}'. Value must be >= 1"
     }
     if (freebayesCoverageRegions < 1) {
         error "Invalid --freebayes_coverage_regions '${params.freebayes_coverage_regions}'. Value must be >= 1"
@@ -96,7 +92,7 @@ workflow POPFUN {
             }
 
             if (maxRegionsInFile > freebayesMaxChunks) {
-                def sizeParam = params.freebayes_region_splitter == 'bai' ? '--freebayes_cov_chunk' : (params.freebayes_region_splitter == 'coverage' ? '--freebayes_coverage_regions' : '--freebayes_chunk_size')
+                def sizeParam = params.freebayes_region_splitter == 'coverage' ? '--freebayes_coverage_regions' : '--freebayes_chunk_size'
                 def regionFileName = largestRegionFile?.getName() ?: 'unknown'
                 error "Freebayes region generation produced ${maxRegionsInFile} target regions in ${regionFileName}, which exceeds --freebayes_max_chunks ${freebayesMaxChunks}. Increase --freebayes_max_chunks or ${sizeParam} or use the recommended default values."
             }
@@ -178,7 +174,6 @@ workflow POPFUN {
     ch_multiqc_logo   = file("$projectDir/assets/popfun.png")
     ch_vcf_compare_script = Channel.value(file("$projectDir/bin/vcf_multi_compare.py"))
     ch_popgen_script = Channel.value(file("$projectDir/bin/popgen_analyses.py"))
-    ch_freebayes_bai_split_script = Channel.value(file("$projectDir/bin/split_ref_by_bai_datasize.py"))
     ch_freebayes_coverage_split_script = Channel.value(file("$projectDir/bin/coverage_to_regions.py"))
     ch_freebayes_mosdepth_coverage_script = Channel.value(file("$projectDir/bin/mosdepth_intervals_to_coverage.py"))
 
@@ -286,7 +281,7 @@ workflow POPFUN {
             GATK_CALL_LIB(ch_error_dedup_bam, ch_ref, ch_ref_fai, ch_ref_dict)
             ch_lib_vcfs = GATK_CALL_LIB.out.vcf
         } else {
-            FREEBAYES_CALL_LIB(ch_error_dedup_bam, ch_ref, ch_ref_fai, ch_freebayes_bai_split_script)
+            FREEBAYES_CALL_LIB(ch_error_dedup_bam, ch_ref, ch_ref_fai)
             ch_lib_vcfs = FREEBAYES_CALL_LIB.out.vcf
         }
 
@@ -402,16 +397,7 @@ workflow POPFUN {
             .map { bais -> [bais] }
 
         def ch_population_region_files
-        if (params.freebayes_region_splitter == 'bai') {
-            FREEBAYES_SPLIT_REGIONS_BAI(
-                ch_ref_fai,
-                Channel.value(freebayesCovChunk),
-                ch_population_bams_raw,
-                ch_population_bais_raw,
-                ch_freebayes_bai_split_script
-            )
-            ch_population_region_files = validateFreebayesRegionFiles(FREEBAYES_SPLIT_REGIONS_BAI.out.regions)
-        } else if (params.freebayes_region_splitter == 'coverage') {
+        if (params.freebayes_region_splitter == 'coverage') {
             if (params.freebayes_coverage_backend == 'sambamba') {
                 FREEBAYES_COVERAGE_SAMBAMBA(ch_population_bams_raw, ch_population_bais_raw)
                 FREEBAYES_SPLIT_REGIONS_COVERAGE(
@@ -489,16 +475,7 @@ workflow POPFUN {
             .map { bais -> [bais] }
 
         def ch_ens_region_files
-        if (params.freebayes_region_splitter == 'bai') {
-            FREEBAYES_SPLIT_REGIONS_BAI(
-                ch_ref_fai,
-                Channel.value(freebayesCovChunk),
-                ch_ens_population_bams_raw,
-                ch_ens_population_bais_raw,
-                ch_freebayes_bai_split_script
-            )
-            ch_ens_region_files = validateFreebayesRegionFiles(FREEBAYES_SPLIT_REGIONS_BAI.out.regions)
-        } else if (params.freebayes_region_splitter == 'coverage') {
+        if (params.freebayes_region_splitter == 'coverage') {
             if (params.freebayes_coverage_backend == 'sambamba') {
                 FREEBAYES_COVERAGE_SAMBAMBA(ch_ens_population_bams_raw, ch_ens_population_bais_raw)
                 FREEBAYES_SPLIT_REGIONS_COVERAGE(
@@ -585,16 +562,7 @@ workflow POPFUN {
             .collect()
 
         def ch_individual_region_files
-        if (params.freebayes_region_splitter == 'bai') {
-            FREEBAYES_SPLIT_REGIONS_BAI(
-                ch_ref_fai,
-                Channel.value(freebayesCovChunk),
-                ch_individual_bams_raw,
-                ch_individual_bais_raw,
-                ch_freebayes_bai_split_script
-            )
-            ch_individual_region_files = validateFreebayesRegionFiles(FREEBAYES_SPLIT_REGIONS_BAI.out.regions)
-        } else if (params.freebayes_region_splitter == 'coverage') {
+        if (params.freebayes_region_splitter == 'coverage') {
             if (params.freebayes_coverage_backend == 'sambamba') {
                 FREEBAYES_COVERAGE_SAMBAMBA(ch_individual_bams_raw, ch_individual_bais_raw)
                 FREEBAYES_SPLIT_REGIONS_COVERAGE(

@@ -103,9 +103,8 @@ PopFun allows you to bypass expensive indexing steps by providing pre-built dire
 * `--caller`: `freebayes` (default), `gatk`, or `ensemble`
 * `--markdup_tool`: `bamsormadup` (default), `gatk`, `sambamba`, or `fastdup`
 * `--freebayes_mode`: `population` (default) or `individual`
-* `--freebayes_region_splitter`: Region splitting strategy for Freebayes fan-out: `fai` (default, fixed-size chunks from the FASTA index), `bai` (coverage/data-aware chunks derived from BAM/BAI indexes), or `coverage` (coverage-balanced chunks derived from alignment depth).
+* `--freebayes_region_splitter`: Region splitting strategy for Freebayes fan-out: `fai` (default, fixed-size chunks from the FASTA index) or `coverage` (coverage-balanced chunks derived from alignment depth).
 * `--freebayes_chunk_size`: Chunk size passed to `fasta_generate_regions.py` for splitting genomic regions in Freebayes population-mode. (Default: `100000`).
-* `--freebayes_cov_chunk`: Target cumulative BAI-backed data size per region when `--freebayes_region_splitter bai` is used. (Default: `1e8`).
 * `--freebayes_coverage_backend`: Coverage backend used when `--freebayes_region_splitter coverage` is selected: `sambamba` (default) or `mosdepth` (prototype).
 * `--freebayes_coverage_regions`: Target number of coverage-balanced regions to generate when `--freebayes_region_splitter coverage` is used. (Default: `500`).
 * `--freebayes_max_chunks`: Maximum number of generated Freebayes target regions allowed in the largest per-chromosome region file before the workflow aborts and asks for coarser chunking. (Default: `2000`).
@@ -131,13 +130,11 @@ PopFun allows you to bypass expensive indexing steps by providing pre-built dire
 
 Note: Genotype-based filtering relies on valid `GQ` fields. By default, PopFun enables Freebayes `--genotype-qualities` (via `--freebayes_args`) so genotype qualities are emitted and filtering behaves as expected.
 
-Note: `--freebayes_region_splitter bai` uses the vendored Freebayes `split_ref_by_bai_datasize.py` helper from `bin/` and runs it in PopFun's dedicated `ghcr.io/idobar/popfun-bai-splitter` image, which provides Bash plus the NumPy and SciPy dependencies missing from the default Freebayes container/package.
+Note: `--freebayes_region_splitter coverage` vendors the upstream Freebayes `coverage_to_regions.py` helper in `bin/`. The default `sambamba` backend uses the existing BioContainers `quay.io/biocontainers/sambamba:1.0.1--h6f6fda4_1` image to generate a coverage stream, then runs the helper in the off-the-shelf `python:3.11-slim` image. The `mosdepth` backend is available as a prototype path using `quay.io/biocontainers/mosdepth:0.3.14--h05c3d44_0` plus a small adapter that converts mosdepth interval output back into the coverage stream expected by the vendored Freebayes helper.
 
-Note: `--freebayes_region_splitter coverage` vendors the upstream Freebayes `coverage_to_regions.py` helper in `bin/`. The default `sambamba` backend uses the existing BioContainers `quay.io/biocontainers/sambamba:1.0.1--h6f6fda4_1` image to generate a coverage stream, then runs the helper in PopFun's Python-capable splitter image. The `mosdepth` backend is available as a prototype path using `quay.io/biocontainers/mosdepth:0.3.14--h05c3d44_0` plus a small adapter that converts mosdepth interval output back into the coverage stream expected by the vendored Freebayes helper.
+Note: Chunk-size tuning depends on how regions are generated. With `--freebayes_region_splitter coverage`, lower `--freebayes_coverage_regions` values produce coarser fan-out and higher values produce finer fan-out. With `--freebayes_region_splitter fai`, appropriate `--freebayes_chunk_size` values depend more on genome size and continuity; highly fragmented assemblies with thousands of contigs often work better with `coverage` splitting than with `fai` splitting.
 
-Note: Chunk-size tuning depends on how regions are generated. With `--freebayes_region_splitter bai`, higher sequencing depth usually requires larger `--freebayes_cov_chunk` values to avoid producing too many tiny regions. With `--freebayes_region_splitter coverage`, lower `--freebayes_coverage_regions` values produce coarser fan-out and higher values produce finer fan-out. With `--freebayes_region_splitter fai`, appropriate `--freebayes_chunk_size` values depend more on genome size and continuity; highly fragmented assemblies with thousands of contigs often work better with `bai` or `coverage` splitting than with `fai` splitting.
-
-Note: If Freebayes region generation exceeds `--freebayes_max_chunks` (default: 2000) in the largest per-chromosome region file, PopFun aborts before fan-out and asks you to increase `--freebayes_cov_chunk`, lower `--freebayes_coverage_regions`, or increase `--freebayes_chunk_size`, depending on the selected splitter.
+Note: If Freebayes region generation exceeds `--freebayes_max_chunks` (default: 2000) in the largest per-chromosome region file, PopFun aborts before fan-out and asks you to lower `--freebayes_coverage_regions` or increase `--freebayes_chunk_size`, depending on the selected splitter.
 
 Note: When `--freebayes_debug true` is enabled, each Freebayes task writes `.freebayes_diagnostics` debug files containing per-region stderr logs, a `region_runtime.tsv` timing table, and a `slowest_regions.tsv` summary of the longest-running regions. These files are skipped by default.
 
