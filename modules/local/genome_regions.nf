@@ -71,17 +71,25 @@ process FREEBAYES_COVERAGE_SAMBAMBA {
     container 'quay.io/biocontainers/sambamba:1.0.1--h6f6fda4_1'
     input:
         path bams
+        path bais
     output:
         path 'coverage.tsv', emit: coverage
     script:
+    def threads = Math.max(1, (task.cpus ?: 1) as Integer)
     """
     set -euo pipefail
 
     find -L . -maxdepth 1 -type f -name '*.bam' | LC_ALL=C sort > bam_paths.txt
+    find -L . -maxdepth 1 -type f -name '*.bai' | LC_ALL=C sort > bai_paths.txt
     [ -s bam_paths.txt ] || { echo 'No staged BAM inputs discovered for FREEBAYES_COVERAGE_SAMBAMBA' >&2; exit 1; }
+    [ -s bai_paths.txt ] || { echo 'No staged BAI inputs discovered for FREEBAYES_COVERAGE_SAMBAMBA' >&2; exit 1; }
+    [ "\$(wc -l < bam_paths.txt)" -eq "\$(wc -l < bai_paths.txt)" ] || {
+        echo 'BAM/BAI count mismatch in FREEBAYES_COVERAGE_SAMBAMBA' >&2
+        exit 1
+    }
 
     mapfile -t bam_args < bam_paths.txt
-    sambamba depth base "\${bam_args[@]}" \
+    sambamba depth base -t ${threads} "\${bam_args[@]}" \
         | awk 'BEGIN{OFS="\t"} NR > 1 && NF >= 3 { print \$1, \$2, \$3 }' > coverage.tsv
 
     [ -s coverage.tsv ] || { echo 'No coverage rows were produced by Sambamba depth base' >&2; exit 1; }
@@ -94,19 +102,27 @@ process FREEBAYES_COVERAGE_MOSDEPTH {
     container 'quay.io/biocontainers/mosdepth:0.3.14--h05c3d44_0'
     input:
         path bams
+        path bais
     output:
         path 'mosdepth/*.per-base.bed.gz', emit: per_base
     script:
+    def threads = Math.max(1, (task.cpus ?: 1) as Integer)
     """
     set -euo pipefail
 
     find -L . -maxdepth 1 -type f -name '*.bam' | LC_ALL=C sort > bam_paths.txt
+    find -L . -maxdepth 1 -type f -name '*.bai' | LC_ALL=C sort > bai_paths.txt
     [ -s bam_paths.txt ] || { echo 'No staged BAM inputs discovered for FREEBAYES_COVERAGE_MOSDEPTH' >&2; exit 1; }
+    [ -s bai_paths.txt ] || { echo 'No staged BAI inputs discovered for FREEBAYES_COVERAGE_MOSDEPTH' >&2; exit 1; }
+    [ "\$(wc -l < bam_paths.txt)" -eq "\$(wc -l < bai_paths.txt)" ] || {
+        echo 'BAM/BAI count mismatch in FREEBAYES_COVERAGE_MOSDEPTH' >&2
+        exit 1
+    }
 
     mkdir -p mosdepth
     while IFS= read -r bam_path; do
         prefix="mosdepth/\$(basename "\${bam_path%.bam}")"
-        mosdepth --fast-mode --threads 1 "\$prefix" "\$bam_path"
+        mosdepth --fast-mode --threads ${threads} "\$prefix" "\$bam_path"
     done < bam_paths.txt
 
     find mosdepth -type f -name '*.per-base.bed.gz' | LC_ALL=C sort > per_base_files.list

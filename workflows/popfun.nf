@@ -413,7 +413,7 @@ workflow POPFUN {
             ch_population_region_files = validateFreebayesRegionFiles(FREEBAYES_SPLIT_REGIONS_BAI.out.regions)
         } else if (params.freebayes_region_splitter == 'coverage') {
             if (params.freebayes_coverage_backend == 'sambamba') {
-                FREEBAYES_COVERAGE_SAMBAMBA(ch_population_bams_raw)
+                FREEBAYES_COVERAGE_SAMBAMBA(ch_population_bams_raw, ch_population_bais_raw)
                 FREEBAYES_SPLIT_REGIONS_COVERAGE(
                     ch_ref_fai,
                     Channel.value(freebayesCoverageRegions),
@@ -422,7 +422,7 @@ workflow POPFUN {
                 )
                 ch_population_region_files = validateFreebayesRegionFiles(FREEBAYES_SPLIT_REGIONS_COVERAGE.out.regions)
             } else {
-                FREEBAYES_COVERAGE_MOSDEPTH(ch_population_bams_raw)
+                FREEBAYES_COVERAGE_MOSDEPTH(ch_population_bams_raw, ch_population_bais_raw)
                 FREEBAYES_SPLIT_REGIONS_MOSDEPTH(
                     ch_ref_fai,
                     Channel.value(freebayesCoverageRegions),
@@ -500,7 +500,7 @@ workflow POPFUN {
             ch_ens_region_files = validateFreebayesRegionFiles(FREEBAYES_SPLIT_REGIONS_BAI.out.regions)
         } else if (params.freebayes_region_splitter == 'coverage') {
             if (params.freebayes_coverage_backend == 'sambamba') {
-                FREEBAYES_COVERAGE_SAMBAMBA(ch_ens_population_bams_raw)
+                FREEBAYES_COVERAGE_SAMBAMBA(ch_ens_population_bams_raw, ch_ens_population_bais_raw)
                 FREEBAYES_SPLIT_REGIONS_COVERAGE(
                     ch_ref_fai,
                     Channel.value(freebayesCoverageRegions),
@@ -509,7 +509,7 @@ workflow POPFUN {
                 )
                 ch_ens_region_files = validateFreebayesRegionFiles(FREEBAYES_SPLIT_REGIONS_COVERAGE.out.regions)
             } else {
-                FREEBAYES_COVERAGE_MOSDEPTH(ch_ens_population_bams_raw)
+                FREEBAYES_COVERAGE_MOSDEPTH(ch_ens_population_bams_raw, ch_ens_population_bais_raw)
                 FREEBAYES_SPLIT_REGIONS_MOSDEPTH(
                     ch_ref_fai,
                     Channel.value(freebayesCoverageRegions),
@@ -596,7 +596,7 @@ workflow POPFUN {
             ch_individual_region_files = validateFreebayesRegionFiles(FREEBAYES_SPLIT_REGIONS_BAI.out.regions)
         } else if (params.freebayes_region_splitter == 'coverage') {
             if (params.freebayes_coverage_backend == 'sambamba') {
-                FREEBAYES_COVERAGE_SAMBAMBA(ch_individual_bams_raw)
+                FREEBAYES_COVERAGE_SAMBAMBA(ch_individual_bams_raw, ch_individual_bais_raw)
                 FREEBAYES_SPLIT_REGIONS_COVERAGE(
                     ch_ref_fai,
                     Channel.value(freebayesCoverageRegions),
@@ -605,7 +605,7 @@ workflow POPFUN {
                 )
                 ch_individual_region_files = validateFreebayesRegionFiles(FREEBAYES_SPLIT_REGIONS_COVERAGE.out.regions)
             } else {
-                FREEBAYES_COVERAGE_MOSDEPTH(ch_individual_bams_raw)
+                FREEBAYES_COVERAGE_MOSDEPTH(ch_individual_bams_raw, ch_individual_bais_raw)
                 FREEBAYES_SPLIT_REGIONS_MOSDEPTH(
                     ch_ref_fai,
                     Channel.value(freebayesCoverageRegions),
