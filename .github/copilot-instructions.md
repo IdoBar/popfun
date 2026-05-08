@@ -39,6 +39,7 @@ Before changing container tags or adding new tools to a process:
 - Keep default params and profile overrides centralized in [nextflow.config](../nextflow.config).
 - Test profile should use project-root-resolved paths for bundled test data.
 - Resource policies and label semantics come from [conf/base.config](../conf/base.config); process-specific test downsizing belongs in `profiles.test.process.withName` overrides.
+- When adding new Nextflow processes, explicitly add them to the relevant `profiles.test.process.withName` block in [nextflow.config](../nextflow.config) instead of relying on an unrelated catch-all matcher.
 
 ## Validation Expectations for Changes
 

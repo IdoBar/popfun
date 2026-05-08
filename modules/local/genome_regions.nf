@@ -148,7 +148,12 @@ process FREEBAYES_SPLIT_REGIONS_COVERAGE {
 
     mkdir -p regions
 
-    python3 "$split_script" "$ref_idx" ${target} < "$coverage" > target_regions.txt
+    coverage_lines="\$(wc -l < "$coverage")"
+    coverage_size="\$(du -h "$coverage" | cut -f1)"
+    echo "FREEBAYES_SPLIT_REGIONS_COVERAGE target_region_count=${target}" >&2
+    echo "FREEBAYES_SPLIT_REGIONS_COVERAGE coverage_file=$coverage coverage_lines=\$coverage_lines coverage_size=\$coverage_size" >&2
+
+    python3 "$split_script" "$ref_idx" ${target} "$coverage" > target_regions.txt
     [ -s target_regions.txt ] || { echo 'No coverage-balanced target regions were produced' >&2; exit 1; }
 
     cut -f1 "$ref_idx" > chrom_list.txt
