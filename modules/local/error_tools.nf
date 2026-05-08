@@ -188,7 +188,7 @@ process FREEBAYES_CALL_LIB {
     xargs cat < metric_files.list >> ${diagnosticsDir}/region_runtime.tsv
 
     printf 'chunk_id\tregion\texit_status\tstart_epoch\tend_epoch\tduration_seconds\tvcf_path\tstderr_log\n' > ${diagnosticsDir}/slowest_regions.tsv
-    tail -n +2 ${diagnosticsDir}/region_runtime.tsv | LC_ALL=C sort -t "\$(printf '\t')" -k6,6nr | head -n 10 >> ${diagnosticsDir}/slowest_regions.tsv
+    tail -n +2 ${diagnosticsDir}/region_runtime.tsv | LC_ALL=C sort -t "\$(printf '\t')" -k6,6nr | awk 'NR <= 10' >> ${diagnosticsDir}/slowest_regions.tsv
 
     if [ "\$xargs_status" -ne 0 ]; then
         echo 'One or more Freebayes chunk calls failed; see freebayes diagnostics for details' >&2
@@ -198,7 +198,15 @@ process FREEBAYES_CALL_LIB {
     find chunks -type f -name '*.vcf' | LC_ALL=C sort > chunk_vcfs.list
     [ -s chunk_vcfs.list ] || { echo 'No Freebayes chunk outputs were produced' >&2; exit 1; }
 
+    set +e
+    set +o pipefail
     xargs cat < chunk_vcfs.list | vcffirstheader | vcfstreamsort -w 1000 | vcfuniq > merged.vcf
+    merge_status=\$?
+    set -o pipefail
+    set -e
+    if [ "\$merge_status" -ne 0 ]; then
+        exit "\$merge_status"
+    fi
 
     bgzip -c merged.vcf > ${unitId}.vcf.gz
     tabix -p vcf ${unitId}.vcf.gz

@@ -90,7 +90,7 @@ workflow POPFUN {
             if (maxRegionsInFile > freebayesMaxChunks) {
                 def sizeParam = params.freebayes_region_splitter == 'bai' ? '--freebayes_cov_chunk' : '--freebayes_chunk_size'
                 def regionFileName = largestRegionFile?.getName() ?: 'unknown'
-                error "Freebayes region generation produced ${maxRegionsInFile} target regions in ${regionFileName}, which exceeds --freebayes_max_chunks ${freebayesMaxChunks}. Increase ${sizeParam} or use the default values."
+                error "Freebayes region generation produced ${maxRegionsInFile} target regions in ${regionFileName}, which exceeds --freebayes_max_chunks ${freebayesMaxChunks}. Increase --freebayes_max_chunks or ${sizeParam} or use the recommended default values."
             }
 
             regionFiles
