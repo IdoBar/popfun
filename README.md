@@ -109,6 +109,7 @@ PopFun allows you to bypass expensive indexing steps by providing pre-built dire
 * `--freebayes_coverage_backend`: Coverage backend used when `--freebayes_region_splitter coverage` is selected: `sambamba` (default) or `mosdepth` (prototype).
 * `--freebayes_coverage_regions`: Target number of coverage-balanced regions to generate when `--freebayes_region_splitter coverage` is used. (Default: `500`).
 * `--freebayes_max_chunks`: Maximum number of generated Freebayes target regions allowed in the largest per-chromosome region file before the workflow aborts and asks for coarser chunking. (Default: `2000`).
+* `--freebayes_debug`: Save Freebayes per-region stderr logs and TSV timing diagnostics when `true`. (Default: `false`).
 * `--caller ensemble` currently uses one fixed strategy: strict intersection of normalized GATK and Freebayes population calls, keeping the higher-QUAL record at each shared site.
 * `--error_estimate`: `false` (default) or `true`
 * `--popgen`: Run population genetics module (PCA + phylogenetic tree) from final cohort VCF and add to MultiQC (Default: `false`).
@@ -138,7 +139,7 @@ Note: Chunk-size tuning depends on how regions are generated. With `--freebayes_
 
 Note: If Freebayes region generation exceeds `--freebayes_max_chunks` (default: 2000) in the largest per-chromosome region file, PopFun aborts before fan-out and asks you to increase `--freebayes_cov_chunk`, lower `--freebayes_coverage_regions`, or increase `--freebayes_chunk_size`, depending on the selected splitter.
 
-Note: Each Freebayes task writes a `.freebayes_diagnostics/` directory containing per-region stderr logs, a `region_runtime.tsv` timing table, and a `slowest_regions.tsv` summary of the longest-running regions.
+Note: When `--freebayes_debug true` is enabled, each Freebayes task writes `.freebayes_diagnostics` debug files containing per-region stderr logs, a `region_runtime.tsv` timing table, and a `slowest_regions.tsv` summary of the longest-running regions. These files are skipped by default.
 
 Note: `--caller ensemble` currently requires `--freebayes_mode population` and is not supported together with `--error_estimate`.
 

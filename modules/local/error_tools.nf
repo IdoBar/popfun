@@ -130,7 +130,7 @@ process FREEBAYES_CALL_LIB {
 
     output:
     tuple val(meta), path("*.vcf.gz"), path("*.vcf.gz.tbi"), emit: vcf
-    path "${meta.unit_id ?: meta.library ?: meta.id}.freebayes_diagnostics", emit: diagnostics
+    path "${meta.unit_id ?: meta.library ?: meta.id}.freebayes_diagnostics", optional: true, emit: diagnostics
 
     script:
     def args = task.ext.args ?: ''
@@ -139,6 +139,7 @@ process FREEBAYES_CALL_LIB {
     def regionSplitter = (params.freebayes_region_splitter ?: 'fai').toString().trim()
     def covChunk = params.freebayes_cov_chunk.toString().trim()
     def diagnosticsDir = "${unitId}.freebayes_diagnostics"
+    def debugEnabled = params.freebayes_debug ? 'true' : 'false'
     """
     set -euo pipefail
 
@@ -154,12 +155,16 @@ process FREEBAYES_CALL_LIB {
 
     [ -s chromosome_regions.txt ] || { echo 'No Freebayes regions generated' >&2; exit 1; }
 
-    mkdir -p chunks ${diagnosticsDir}/stderr ${diagnosticsDir}/metrics
+    mkdir -p chunks
+    if [ "${debugEnabled}" = 'true' ]; then
+        mkdir -p ${diagnosticsDir}/stderr ${diagnosticsDir}/metrics
+    fi
     export NF_REF="$ref"
     export NF_PLOIDY="${params.ploidy}"
     export NF_ARGS="${args}"
     export NF_BAM="$bam"
     export NF_DIAG_DIR="${diagnosticsDir}"
+    export NF_DEBUG="${debugEnabled}"
 
     set +e
     awk 'NF { printf "%s chunks/%08d.vcf\\n", \$0, NR }' chromosome_regions.txt \
@@ -167,28 +172,37 @@ process FREEBAYES_CALL_LIB {
             region="\$1"
             chunk_vcf="\$2"
             chunk_id=\$(basename "\${chunk_vcf%.vcf}")
-            stderr_log="\$NF_DIAG_DIR/stderr/\${chunk_id}.stderr.log"
-            metric_file="\$NF_DIAG_DIR/metrics/\${chunk_id}.tsv"
+            if [ "\$NF_DEBUG" = "true" ]; then
+                stderr_log="\$NF_DIAG_DIR/stderr/\${chunk_id}.stderr.log"
+                metric_file="\$NF_DIAG_DIR/metrics/\${chunk_id}.tsv"
+            else
+                stderr_log=/dev/null
+                metric_file=''
+            fi
             start_epoch=\$(date +%s)
             freebayes -f "\$NF_REF" -p "\$NF_PLOIDY" \$NF_ARGS "\$NF_BAM" --region "\$region" > "\$chunk_vcf" 2> "\$stderr_log"
             status=\$?
             end_epoch=\$(date +%s)
             duration_seconds=\$((end_epoch - start_epoch))
-            printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" \
-                "\$chunk_id" "\$region" "\$status" "\$start_epoch" "\$end_epoch" "\$duration_seconds" "\$chunk_vcf" "\$stderr_log" > "\$metric_file"
+            if [ "\$NF_DEBUG" = "true" ]; then
+                printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" \
+                    "\$chunk_id" "\$region" "\$status" "\$start_epoch" "\$end_epoch" "\$duration_seconds" "\$chunk_vcf" "\$stderr_log" > "\$metric_file"
+            fi
             exit "\$status"
         ' sh
     xargs_status=\$?
     set -e
 
-    find ${diagnosticsDir}/metrics -type f -name '*.tsv' | LC_ALL=C sort > metric_files.list
-    [ -s metric_files.list ] || { echo 'No Freebayes diagnostic metrics were produced' >&2; exit 1; }
+    if [ "${debugEnabled}" = 'true' ]; then
+        find ${diagnosticsDir}/metrics -type f -name '*.tsv' | LC_ALL=C sort > metric_files.list
+        [ -s metric_files.list ] || { echo 'No Freebayes diagnostic metrics were produced' >&2; exit 1; }
 
-    printf 'chunk_id\tregion\texit_status\tstart_epoch\tend_epoch\tduration_seconds\tvcf_path\tstderr_log\n' > ${diagnosticsDir}/region_runtime.tsv
-    xargs cat < metric_files.list >> ${diagnosticsDir}/region_runtime.tsv
+        printf 'chunk_id\tregion\texit_status\tstart_epoch\tend_epoch\tduration_seconds\tvcf_path\tstderr_log\n' > ${diagnosticsDir}/region_runtime.tsv
+        xargs cat < metric_files.list >> ${diagnosticsDir}/region_runtime.tsv
 
-    printf 'chunk_id\tregion\texit_status\tstart_epoch\tend_epoch\tduration_seconds\tvcf_path\tstderr_log\n' > ${diagnosticsDir}/slowest_regions.tsv
-    tail -n +2 ${diagnosticsDir}/region_runtime.tsv | LC_ALL=C sort -t "\$(printf '\t')" -k6,6nr | awk 'NR <= 10' >> ${diagnosticsDir}/slowest_regions.tsv
+        printf 'chunk_id\tregion\texit_status\tstart_epoch\tend_epoch\tduration_seconds\tvcf_path\tstderr_log\n' > ${diagnosticsDir}/slowest_regions.tsv
+        tail -n +2 ${diagnosticsDir}/region_runtime.tsv | LC_ALL=C sort -t "\$(printf '\t')" -k6,6nr | awk 'NR <= 10' >> ${diagnosticsDir}/slowest_regions.tsv
+    fi
 
     if [ "\$xargs_status" -ne 0 ]; then
         echo 'One or more Freebayes chunk calls failed; see freebayes diagnostics for details' >&2

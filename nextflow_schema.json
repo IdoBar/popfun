@@ -67,6 +67,11 @@
           "minimum": 1,
           "description": "Maximum number of Freebayes target regions allowed in the largest generated per-chromosome region file. The workflow aborts if this limit is exceeded so chunk sizes can be increased before fan-out creates too many tiny tasks."
         },
+        "freebayes_debug": {
+          "type": "boolean",
+          "default": false,
+          "description": "When true, save Freebayes per-region stderr logs and TSV timing diagnostics. When false, skip writing those debug files."
+        },
         "freebayes_args": {
           "type": "string",
           "default": "--genotype-qualities --use-best-n-alleles 4",
