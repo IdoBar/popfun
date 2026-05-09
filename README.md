@@ -176,6 +176,7 @@ PopFun utilizes the following open-source tools via [Bioconda](https://bioconda.
 * [GATK4](https://gatk.broadinstitute.org/hc/en-us) [4.6.2.0]
 * [biobambam2 (bamsormadup)](https://gitlab.com/german.tischler/biobambam2) [2.0.185]
 * [Sambamba](https://lomereiter.github.io/sambamba/) [1.0.1]
+* [Mosdepth](https://github.com/brentp/mosdepth) [0.3.14]
 * [FastDup](https://github.com/zzhofict/FastDup) [1.0.0]
 * [Freebayes](https://github.com/freebayes/freebayes) [1.3.10]
 * [BEDOPS](https://bedops.readthedocs.io/en/latest/) [2.4.42] (gff2bed)

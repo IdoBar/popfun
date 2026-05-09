@@ -46,6 +46,10 @@ Please cite the workflow framework and relevant software used in your analysis.
 
 > Tarasov, A., Vilella, A. J., Cuppen, E., Nijman, I. J., & Prins, P. (2015). Sambamba: fast processing of NGS alignment formats. Bioinformatics, 31(12), 2032-2034. doi:10.1093/bioinformatics/btv098
 
+### [mosdepth](https://github.com/brentp/mosdepth)
+
+> Pedersen, B. S., & Quinlan, A. R. (2018). Mosdepth: quick coverage calculation for genomes and exomes. Bioinformatics, 34(5), 867-868. doi:10.1093/bioinformatics/btx699
+
 ### [FastDup](https://github.com/zzhofict/FastDup)
 
 > Zhang, Z., Li, Y., Meng, K., Zhang, C., & Tan, G. (2025). FastDup: a scalable duplicate marking tool using speculation-and-test mechanism. Bioinformatics, 41(12), btaf633. doi:10.1093/bioinformatics/btaf633
