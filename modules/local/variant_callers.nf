@@ -8,7 +8,7 @@ process FREEBAYES {
     output:
         path "${meta.id}.vcf.gz", emit: vcf
         path "${meta.id}.vcf.gz.tbi", emit: tbi
-        path "${meta.id}.freebayes_diagnostics", optional: true, emit: diagnostics
+        path "${meta.id}.freebayes_diagnostics/*.tsv", optional: true, emit: diagnostics
     script:
     def args = task.ext.args ?: ''
     def threads = Math.max(1, (task.cpus ?: 1) as Integer)
@@ -106,7 +106,7 @@ process FREEBAYES_POPULATION {
         tuple val(meta), path(region_file), path(bams), path(bais), path(ref), path(ref_idx)
     output:
         tuple val(meta), path("${meta.id}.vcf.gz"), path("${meta.id}.vcf.gz.tbi"), emit: vcf
-        path "${meta.id}.freebayes_diagnostics", optional: true, emit: diagnostics
+        path "${meta.id}.freebayes_diagnostics/*.tsv", optional: true, emit: diagnostics
     script:
     def args = task.ext.args ?: ''
     def threads = Math.max(1, (task.cpus ?: 1) as Integer)
