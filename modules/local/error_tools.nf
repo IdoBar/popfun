@@ -129,7 +129,7 @@ process FREEBAYES_CALL_LIB {
 
     output:
     tuple val(meta), path("*.vcf.gz"), path("*.vcf.gz.tbi"), emit: vcf
-    path "${meta.unit_id ?: meta.library ?: meta.id}.freebayes_diagnostics", optional: true, emit: diagnostics
+    path "${meta.unit_id ?: meta.library ?: meta.id}.freebayes_diagnostics/*.tsv", optional: true, emit: diagnostics
 
     script:
     def args = task.ext.args ?: ''
@@ -186,11 +186,11 @@ process FREEBAYES_CALL_LIB {
         find ${diagnosticsDir}/metrics -type f -name '*.tsv' | LC_ALL=C sort > metric_files.list
         [ -s metric_files.list ] || { echo 'No Freebayes diagnostic metrics were produced' >&2; exit 1; }
 
-        printf 'chunk_id\tregion\texit_status\tstart_epoch\tend_epoch\tduration_seconds\tvcf_path\tstderr_log\n' > ${diagnosticsDir}/region_runtime.tsv
-        xargs cat < metric_files.list >> ${diagnosticsDir}/region_runtime.tsv
+        printf 'chunk_id\tregion\texit_status\tstart_epoch\tend_epoch\tduration_seconds\tvcf_path\tstderr_log\n' > ${diagnosticsDir}/${unitId}.freebayes_diagnostics_region_runtime.tsv
+        xargs cat < metric_files.list >> ${diagnosticsDir}/${unitId}.freebayes_diagnostics_region_runtime.tsv
 
-        printf 'chunk_id\tregion\texit_status\tstart_epoch\tend_epoch\tduration_seconds\tvcf_path\tstderr_log\n' > ${diagnosticsDir}/slowest_regions.tsv
-        tail -n +2 ${diagnosticsDir}/region_runtime.tsv | LC_ALL=C sort -t "\$(printf '\t')" -k6,6nr | awk 'NR <= 10' >> ${diagnosticsDir}/slowest_regions.tsv
+        printf 'chunk_id\tregion\texit_status\tstart_epoch\tend_epoch\tduration_seconds\tvcf_path\tstderr_log\n' > ${diagnosticsDir}/${unitId}.freebayes_diagnostics_slowest_regions.tsv
+        tail -n +2 ${diagnosticsDir}/${unitId}.freebayes_diagnostics_region_runtime.tsv | LC_ALL=C sort -t "\$(printf '\t')" -k6,6nr | awk 'NR <= 10' >> ${diagnosticsDir}/${unitId}.freebayes_diagnostics_slowest_regions.tsv
     fi
 
     if [ "\$xargs_status" -ne 0 ]; then
