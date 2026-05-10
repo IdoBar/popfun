@@ -20,6 +20,7 @@ workflow POPFUN {
     def valid_stop_steps = ['qc', 'alignment', 'call', 'filter', 'multiqc']
     def valid_markdup_tools = ['gatk', 'bamsormadup', 'sambamba', 'fastdup']
     def valid_callers = ['freebayes', 'gatk', 'ensemble']
+    def valid_error_estimate_callers = ['freebayes', 'gatk']
     def valid_freebayes_region_splitters = ['fai', 'coverage']
     def valid_freebayes_coverage_backends = ['sambamba', 'mosdepth']
     def parseWholeNumberParam = { value, name ->
@@ -33,6 +34,8 @@ workflow POPFUN {
 
     def freebayesCoverageRegions = parseWholeNumberParam(params.freebayes_coverage_regions, 'freebayes_coverage_regions')
     def freebayesMaxChunks = parseWholeNumberParam(params.freebayes_max_chunks, 'freebayes_max_chunks')
+    def configuredErrorEstimateCaller = params.error_estimate_caller == null ? '' : params.error_estimate_caller.toString().trim()
+    def effectiveErrorEstimateCaller = configuredErrorEstimateCaller ?: (params.caller == 'ensemble' ? 'freebayes' : params.caller)
 
     if (!valid_start_steps.contains(params.start_step)) {
         error "Invalid --start_step '${params.start_step}'. Supported values: ${valid_start_steps.join(', ')}"
@@ -46,6 +49,9 @@ workflow POPFUN {
     if (!valid_callers.contains(params.caller)) {
         error "Invalid --caller '${params.caller}'. Supported values: ${valid_callers.join(', ')}"
     }
+    if (configuredErrorEstimateCaller && !valid_error_estimate_callers.contains(configuredErrorEstimateCaller)) {
+        error "Invalid --error_estimate_caller '${params.error_estimate_caller}'. Supported values: ${valid_error_estimate_callers.join(', ')}"
+    }
     if (!valid_freebayes_region_splitters.contains(params.freebayes_region_splitter)) {
         error "Invalid --freebayes_region_splitter '${params.freebayes_region_splitter}'. Supported values: ${valid_freebayes_region_splitters.join(', ')}"
     }
@@ -55,8 +61,8 @@ workflow POPFUN {
     if (params.caller == 'ensemble' && params.freebayes_mode != 'population') {
         error "--caller ensemble currently requires --freebayes_mode population"
     }
-    if (params.caller == 'ensemble' && params.error_estimate) {
-        error "--caller ensemble is not supported with --error_estimate yet"
+    if (!valid_error_estimate_callers.contains(effectiveErrorEstimateCaller)) {
+        error "Unable to resolve a valid --error_estimate_caller from --caller '${params.caller}'. Supported values: ${valid_error_estimate_callers.join(', ')}"
     }
     if ((params.freebayes_chunk_size as Integer) < 1) {
         error "Invalid --freebayes_chunk_size '${params.freebayes_chunk_size}'. Value must be >= 1"
@@ -277,7 +283,7 @@ workflow POPFUN {
             ch_error_dedup_bam = MARK_DUPLICATES_LIB.out.dedup_bam
         }
 
-        if (params.caller == 'gatk') {
+        if (effectiveErrorEstimateCaller == 'gatk') {
             GATK_CALL_LIB(ch_error_dedup_bam, ch_ref, ch_ref_fai, ch_ref_dict)
             ch_lib_vcfs = GATK_CALL_LIB.out.vcf
         } else {

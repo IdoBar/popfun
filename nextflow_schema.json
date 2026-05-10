@@ -24,6 +24,12 @@
           "default": "ILLUMINACLIP:TruSeq3-PE.fa:2:30:10 LEADING:3 TRAILING:3 SLIDINGWINDOW:4:15 MINLEN:36"},
         "aligner": { "type": "string", "enum": ["bwa-mem2", "bowtie2"], "default": "bwa-mem2" },
         "caller": { "type": "string", "enum": ["gatk", "freebayes", "ensemble"], "default": "freebayes" },
+        "error_estimate_caller": {
+          "type": ["string", "null"],
+          "enum": ["gatk", "freebayes", null],
+          "default": null,
+          "description": "Caller used for the optional per-library error-estimation branch. Defaults to the main --caller value, except --caller ensemble falls back to 'freebayes'. Can be overridden to 'gatk' or 'freebayes'."
+        },
         "markdup_tool": {
           "type": "string",
           "enum": ["gatk", "bamsormadup", "sambamba", "fastdup"],

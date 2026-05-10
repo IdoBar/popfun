@@ -101,6 +101,7 @@ PopFun allows you to bypass expensive indexing steps by providing pre-built dire
 * `--trimmer`: `fastp` (default) or `trimmomatic`
 * `--aligner`: `bwa-mem2` (default) or `bowtie2`
 * `--caller`: `freebayes` (default), `gatk`, or `ensemble`
+* `--error_estimate_caller`: Caller used for the optional per-library error-estimation branch: `freebayes` or `gatk`. By default this follows `--caller`, except `--caller ensemble` defaults to `freebayes` for error estimation.
 * `--markdup_tool`: `bamsormadup` (default), `gatk`, `sambamba`, or `fastdup`
 * `--freebayes_mode`: `population` (default) or `individual`
 * `--freebayes_region_splitter`: Region splitting strategy for Freebayes fan-out: `fai` (default, fixed-size chunks from the FASTA index) or `coverage` (coverage-balanced chunks derived from alignment depth).
@@ -138,7 +139,7 @@ Note: If Freebayes region generation exceeds `--freebayes_max_chunks` (default: 
 
 Note: When `--freebayes_debug true` is enabled, each Freebayes task writes `.freebayes_diagnostics` debug files containing per-region stderr logs, a `region_runtime.tsv` timing table, and a `slowest_regions.tsv` summary of the longest-running regions. These files are skipped by default.
 
-Note: `--caller ensemble` currently requires `--freebayes_mode population` and is not supported together with `--error_estimate`.
+Note: `--caller ensemble` currently requires `--freebayes_mode population`. When `--error_estimate true` is also enabled, the error-estimation branch defaults to `--error_estimate_caller freebayes`; override this with `--error_estimate_caller gatk` if you want GATK-based per-library error estimation instead.
 
 * `--filter_qual`: Minimum QUAL score (Default: `30`)
 * `--filter_min_dp`: Minimum Depth (Default: `10`)
