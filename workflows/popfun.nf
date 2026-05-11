@@ -455,6 +455,9 @@ workflow POPFUN {
             }
 
         FREEBAYES_POPULATION(ch_population_jobs)
+        if (params.freebayes_debug) {
+            FREEBAYES_POPULATION.out.diagnostics.view { diag -> "FREEBAYES_POPULATION diagnostics emitted: ${diag}" }
+        }
 
         ch_population_concat_inputs = FREEBAYES_POPULATION.out.vcf
             .map { meta, vcf, tbi -> tuple(vcf, tbi) }
@@ -533,6 +536,9 @@ workflow POPFUN {
             }
 
         FREEBAYES_POPULATION(ch_ens_fb_jobs)
+        if (params.freebayes_debug) {
+            FREEBAYES_POPULATION.out.diagnostics.view { diag -> "FREEBAYES_POPULATION diagnostics emitted: ${diag}" }
+        }
 
         ch_ens_fb_concat_inputs = FREEBAYES_POPULATION.out.vcf
             .map { meta, vcf, tbi -> tuple(vcf, tbi) }
