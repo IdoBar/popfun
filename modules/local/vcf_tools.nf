@@ -8,7 +8,7 @@ process BCFTOOLS_MERGE {
     output: path "merged.vcf.gz", emit: vcf
     script:
     """
-    bcftools merge --force-samples -O z -o merged.vcf.gz $vcfs
+    bcftools merge --force-samples -O z -o merged.vcf.gz "$vcfs"
     """
 }
 
@@ -23,7 +23,7 @@ process BCFTOOLS_CONCAT {
         path "population.vcf.gz.tbi", emit: tbi
     script:
     """
-    printf '%s\n' $vcfs > vcf_list.txt
+    printf '%s\\n' "$vcfs" > vcf_list.txt
     bcftools concat -f vcf_list.txt -Oz -o population.vcf.gz
     tabix -p vcf population.vcf.gz
     """
@@ -38,7 +38,7 @@ process BCFTOOLS_STATS {
     output: path "${meta.id}.vcf.stats", emit: stats 
     script:
     """
-    bcftools stats $vcf > ${meta.id}.vcf.stats
+    bcftools stats "$vcf" > "${meta.id}.vcf.stats"
     """
 }
 
@@ -57,10 +57,10 @@ process VCF_ENSEMBLE_COMBINE {
     """
     set -euo pipefail
 
-    bcftools norm -m -any -O z -o gatk.norm.vcf.gz $vcf_gatk
+    bcftools norm -m -any -O z -o gatk.norm.vcf.gz "$vcf_gatk"
     tabix -f -p vcf gatk.norm.vcf.gz
 
-    bcftools norm -m -any -O z -o freebayes.norm.vcf.gz $vcf_fb
+    bcftools norm -m -any -O z -o freebayes.norm.vcf.gz "$vcf_fb"
     tabix -f -p vcf freebayes.norm.vcf.gz
 
     bcftools query -f '%CHROM\\t%POS\\t%REF\\t%ALT\\t%QUAL\\n' gatk.norm.vcf.gz | sort -k1,1 -k2,2n -k3,3 -k4,4 > gatk.tsv
@@ -96,8 +96,8 @@ process VCF_ENSEMBLE_COMBINE {
             bcftools view -h gatk.norm.vcf.gz | grep -v '^#CHROM'
             bcftools view -h freebayes.norm.vcf.gz | grep -v '^#CHROM'
         } | awk '!seen[\$0]++'
-        printf '##INFO=<ID=CALLERS,Number=.,Type=String,Description="Callers reporting this variant">\n'
-        printf '##INFO=<ID=NUM_CALLERS,Number=1,Type=Integer,Description="Number of callers supporting this variant">\n'
+        printf '##INFO=<ID=CALLERS,Number=.,Type=String,Description="Callers reporting this variant">\\n'
+        printf '##INFO=<ID=NUM_CALLERS,Number=1,Type=Integer,Description="Number of callers supporting this variant">\\n'
         bcftools view -h gatk.norm.vcf.gz | awk '/^#CHROM/'
     } > ensemble.header.vcf
 

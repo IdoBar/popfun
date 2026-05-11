@@ -16,6 +16,6 @@ process GFF_TO_BED {
     // Safely strip the extension and replace with .bed
     def bed_name = gff.name.replaceAll(/\.gff(3)?$/, ".bed")
     """
-    gff2bed < $gff > $bed_name
+    gff2bed < "$gff" > "$bed_name"
     """
 }

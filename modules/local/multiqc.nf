@@ -56,6 +56,6 @@ process MULTIQC {
 
     script:
     """
-    multiqc -n multiqc_report.html -c $multiqc_config .
+    multiqc -n multiqc_report.html -c "$multiqc_config" .
     """
 }

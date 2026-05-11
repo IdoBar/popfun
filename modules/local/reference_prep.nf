@@ -14,7 +14,7 @@ process DECOMPRESS_FASTA {
 
     script:
     """
-    gunzip -c $fasta > reference.decompressed.fa
+    gunzip -c "$fasta" > reference.decompressed.fa
     """
 }
 
@@ -32,7 +32,7 @@ process SAMTOOLS_FAIDX {
 
     script:
     """
-    samtools faidx $fasta
+    samtools faidx "$fasta"
     """
 }
 
@@ -53,7 +53,7 @@ process GATK_DICTIONARY {
     def dict_name = fasta.name.replaceAll(/(?i)\.(fa|fasta)(\.gz)?$/, ".dict")
     
     """
-    gatk CreateSequenceDictionary -R $fasta -O $dict_name
+    gatk CreateSequenceDictionary -R "$fasta" -O "$dict_name"
     """
 }
 
@@ -70,8 +70,9 @@ process BWA_INDEX {
     """
     mkdir bwa_index
     # Symlink the fasta into the dir so bwa-mem2 writes indices next to it
-    ln -s \$(readlink -f $fasta) bwa_index/${fasta.name}
-    bwa-mem2 index bwa_index/${fasta.name}
+    ref_real_path=\$(readlink -f "$fasta")
+    ln -s "\$ref_real_path" "bwa_index/${fasta.name}"
+    bwa-mem2 index "bwa_index/${fasta.name}"
     """
 }
 
@@ -87,6 +88,6 @@ process BOWTIE2_INDEX {
     script:
     """
     mkdir bowtie2_index
-    bowtie2-build --threads ${task.cpus} $fasta bowtie2_index/${fasta.name}
+    bowtie2-build --threads ${task.cpus} "$fasta" "bowtie2_index/${fasta.name}"
     """
 }

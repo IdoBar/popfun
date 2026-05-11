@@ -6,6 +6,10 @@ PopFun is a Nextflow DSL2 pipeline for population-scale fungal variant discovery
 
 This file is the global guidance layer. Module-specific rules live under `.github/instructions/`.
 
+**Critical: Development & Testing Instructions**
+- **Always use a scratch folder for Nextflow runs** — see [../INSTRUCTIONS.md](../INSTRUCTIONS.md#-important-always-use-a-scratch-folder-for-nextflow-runs)
+- Never run `nextflow run` commands from the project root; use a separate scratch directory to avoid cluttering the repo
+
 Start here:
 - [README.md](../README.md)
 - [nextflow.config](../nextflow.config)
@@ -52,6 +56,7 @@ For any pipeline logic change, validate at least:
 
 ## Practical Lessons from Prior Fixes
 
+- **Always use a scratch folder** for Nextflow runs (not the project root). The `work/` directory alone can grow to hundreds of GB. See [../INSTRUCTIONS.md](../INSTRUCTIONS.md) for setup steps.
 - Many failures surfaced as secondary Nextflow exceptions after a process failed; always identify the first process error and exit code.
 - Many failures resulted from improper escaping of variables and string literals in Nextflow `script` blocks processed by Groovy. When writing `awk` inside triple-quoted Groovy strings, treat backslash escapes as Groovy-sensitive: use `\\n` for newlines, `\\t` for tabs, and `\\\"` for embedded double quotes that must survive into the runtime `awk` program. Do not assume `\n`, `\t`, or `\"` will reach `awk` unchanged.
 - For `awk` programs embedded in Nextflow `script` blocks, prefer a quick literal-escaping review before finalizing edits: check every `FS`/`OFS`, `printf` format string, and emitted header line for Groovy-safe escaping.

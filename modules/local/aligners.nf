@@ -18,7 +18,7 @@ process BWA_ALIGN {
     def unitId = meta.unit_id ?: meta.library ?: meta.id
     def rg = "@RG\\tID:${meta.id}.${unitId}\\tSM:${meta.id}\\tLB:${unitId}\\tPL:ILLUMINA"
     """
-    bwa-mem2 mem -t ${task.cpus} -R '$rg' $args ${index_dir}/${prefix} $read1 $read2 > ${unitId}.sam
+    bwa-mem2 mem -t ${task.cpus} -R '$rg' $args "${index_dir}/${prefix}" "$read1" "$read2" > "${unitId}.sam"
     """
 }
 
@@ -39,8 +39,8 @@ process BOWTIE2_ALIGN {
     def args = task.ext.args ?: ''
     def unitId = meta.unit_id ?: meta.library ?: meta.id
     """
-    bowtie2 -x ${index_dir}/${prefix} -1 $read1 -2 $read2 -p ${task.cpus} $args \
-        --rg-id ${meta.id}.${unitId} --rg SM:${meta.id} --rg LB:${unitId} --rg PL:ILLUMINA > ${unitId}.sam
+    bowtie2 -x "${index_dir}/${prefix}" -1 "$read1" -2 "$read2" -p ${task.cpus} $args \\
+        --rg-id ${meta.id}.${unitId} --rg SM:${meta.id} --rg LB:${unitId} --rg PL:ILLUMINA > "${unitId}.sam"
     """
 }
 
@@ -59,6 +59,6 @@ process SAMTOOLS_SORT_ALIGN {
     script:
     def unitId = meta.unit_id ?: meta.library ?: meta.id
     """
-    samtools sort -@ ${task.cpus} -o ${unitId}.sorted.bam $sam
+    samtools sort -@ ${task.cpus} -o "${unitId}.sorted.bam" "$sam"
     """
 }

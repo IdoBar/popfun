@@ -17,9 +17,9 @@ process MARK_DUPLICATES_LIB {
     def unitId = meta.unit_id ?: meta.library ?: meta.id
     """
     gatk MarkDuplicates \\
-        -I $bam \\
-        -O ${unitId}.dedup.bam \\
-        -M ${unitId}.metrics.txt \\
+        -I "$bam" \\
+        -O "${unitId}.dedup.bam" \\
+        -M "${unitId}.metrics.txt" \\
         --CREATE_INDEX true \\
         --READ_NAME_REGEX null
     """
@@ -41,9 +41,9 @@ process MARK_DUPLICATES_LIB_BAMSORMADUP {
     script:
     def unitId = meta.unit_id ?: meta.library ?: meta.id
     """
-    bamcollate2 inputformat=bam outputformat=bam level=1 < $bam | \
-    bamsormadup SO=coordinate inputformat=bam level=1 threads=${task.cpus} M=${unitId}.metrics.txt > ${unitId}.dedup.bam
-    bamindex < ${unitId}.dedup.bam > ${unitId}.dedup.bai
+    bamcollate2 inputformat=bam outputformat=bam level=1 < "$bam" | \
+    bamsormadup SO=coordinate inputformat=bam level=1 threads=${task.cpus} M="${unitId}.metrics.txt" > "${unitId}.dedup.bam"
+    bamindex < "${unitId}.dedup.bam" > "${unitId}.dedup.bai"
     """
 }
 
@@ -63,8 +63,8 @@ process MARK_DUPLICATES_LIB_SAMBAMBA {
     script:
     def unitId = meta.unit_id ?: meta.library ?: meta.id
     """
-    sambamba markdup -t ${task.cpus} $bam ${unitId}.dedup.bam 2> ${unitId}.sambamba_markdup.log
-    sambamba index -t ${task.cpus} ${unitId}.dedup.bam ${unitId}.dedup.bai
+    sambamba markdup -t ${task.cpus} "$bam" "${unitId}.dedup.bam" 2> "${unitId}.sambamba_markdup.log"
+    sambamba index -t ${task.cpus} "${unitId}.dedup.bam" "${unitId}.dedup.bai"
     """
 }
 
@@ -84,8 +84,8 @@ process MARK_DUPLICATES_LIB_FASTDUP {
     script:
     def unitId = meta.unit_id ?: meta.library ?: meta.id
     """
-    fastdup --input $bam --output ${unitId}.dedup.bam --metrics ${unitId}.metrics.txt --num-threads ${task.cpus}
-    samtools index -@ ${task.cpus} ${unitId}.dedup.bam ${unitId}.dedup.bai
+    fastdup --input "$bam" --output "${unitId}.dedup.bam" --metrics "${unitId}.metrics.txt" --num-threads ${task.cpus}
+    samtools index -@ ${task.cpus} "${unitId}.dedup.bam" "${unitId}.dedup.bai"
     """
 }
 
@@ -109,9 +109,9 @@ process GATK_CALL_LIB {
     def unitId = meta.unit_id ?: meta.library ?: meta.id
     """
     gatk --java-options "-Xmx${task.memory.toGiga()}g" HaplotypeCaller \\
-        -R $ref \\
-        -I $bam \\
-        -O ${unitId}.vcf.gz \\
+        -R "$ref" \\
+        -I "$bam" \\
+        -O "${unitId}.vcf.gz" \\
         -ploidy ${params.ploidy}
     """
 }
@@ -140,7 +140,7 @@ process FREEBAYES_CALL_LIB {
     """
     set -euo pipefail
 
-    awk '{ print \$1 ":1-" \$2 }' $ref_idx > chromosome_regions.txt
+    awk '{ print \$1 ":1-" \$2 }' "$ref_idx" > chromosome_regions.txt
 
     [ -s chromosome_regions.txt ] || { echo 'No Freebayes regions generated' >&2; exit 1; }
 
@@ -190,7 +190,7 @@ process FREEBAYES_CALL_LIB {
         xargs cat < metric_files.list >> ${diagnosticsDir}/${unitId}.freebayes_diagnostics_region_runtime.tsv
 
         printf 'chunk_id\tregion\texit_status\tstart_epoch\tend_epoch\tduration_seconds\tvcf_path\n' > ${diagnosticsDir}/${unitId}.freebayes_diagnostics_slowest_regions.tsv
-        tail -n +2 ${diagnosticsDir}/${unitId}.freebayes_diagnostics_region_runtime.tsv | LC_ALL=C sort -t "\$(printf '\t')" -k6,6nr | awk 'NR <= 10' >> ${diagnosticsDir}/${unitId}.freebayes_diagnostics_slowest_regions.tsv
+        tail -n +2 ${diagnosticsDir}/${unitId}.freebayes_diagnostics_region_runtime.tsv | LC_ALL=C sort -t \$'\t' -k6,6nr | awk 'NR <= 10' >> ${diagnosticsDir}/${unitId}.freebayes_diagnostics_slowest_regions.tsv
     fi
 
     if [ "\$xargs_status" -ne 0 ]; then
@@ -234,10 +234,10 @@ process VCF_MULTI_COMPARE {
     script:
     def vcf_args = vcfs.collect { "'${it}'" }.join(' ')
     """
-    python $compare_script \\
+    python "$compare_script" \\
         --vcfs ${vcf_args} \\
-        --sample ${meta.id} \\
-        --out ${meta.id}_${compare_label}_discordance.csv
+        --sample "${meta.id}" \\
+        --out "${meta.id}_${compare_label}_discordance.csv"
     """
 }
 

@@ -70,7 +70,7 @@ process FREEBAYES {
         xargs cat < metric_files.list >> ${diagnosticsPrefix}_region_runtime.tsv
 
         printf 'chunk_id\tregion\texit_status\tstart_epoch\tend_epoch\tduration_seconds\tvcf_path\n' > ${diagnosticsPrefix}_slowest_regions.tsv
-        tail -n +2 ${diagnosticsPrefix}_region_runtime.tsv | LC_ALL=C sort -t "\$(printf '\t')" -k6,6nr | awk 'NR <= 10' >> ${diagnosticsPrefix}_slowest_regions.tsv
+        tail -n +2 ${diagnosticsPrefix}_region_runtime.tsv | LC_ALL=C sort -t \$'\t' -k6,6nr | awk 'NR <= 10' >> ${diagnosticsPrefix}_slowest_regions.tsv
     fi
 
     if [ "\$xargs_status" -ne 0 ]; then
@@ -166,7 +166,7 @@ process FREEBAYES_POPULATION {
         xargs cat < metric_files.list >> ${diagnosticsPrefix}_region_runtime.tsv
 
         printf 'chunk_id\tregion\texit_status\tstart_epoch\tend_epoch\tduration_seconds\tvcf_path\n' > ${diagnosticsPrefix}_slowest_regions.tsv
-        tail -n +2 ${diagnosticsPrefix}_region_runtime.tsv | LC_ALL=C sort -t "\$(printf '\t')" -k6,6nr | awk 'NR <= 10' >> ${diagnosticsPrefix}_slowest_regions.tsv
+        tail -n +2 ${diagnosticsPrefix}_region_runtime.tsv | LC_ALL=C sort -t \$'\t' -k6,6nr | awk 'NR <= 10' >> ${diagnosticsPrefix}_slowest_regions.tsv
     fi
 
     if [ "\$xargs_status" -ne 0 ]; then
@@ -251,10 +251,10 @@ process GATK_COMBINEGVCFS {
 
     script:
     // Dynamically build the -V arguments for all input gVCFs
-    def input_args = gvcfs.collect { "-V $it" }.join(' ')
+    def input_args = gvcfs.collect { "-V \"$it\"" }.join(' ')
     """
     gatk --java-options "-Xmx${task.memory.toGiga()}g" CombineGVCFs \\
-        -R $ref \\
+        -R "$ref" \\
         $input_args \\
         -O cohort.g.vcf.gz
     """
@@ -279,8 +279,8 @@ process GATK_GENOTYPEGVCFS {
     script:
     """
     gatk --java-options "-Xmx${task.memory.toGiga()}g" GenotypeGVCFs \\
-        -R $ref \\
-        -V $gvcf \\
+        -R "$ref" \\
+        -V "$gvcf" \\
         -O joint_called.vcf.gz
     """
 }

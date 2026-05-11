@@ -18,10 +18,10 @@ process POPGEN_ANALYSES {
 
     script:
     """
-    python ${popgen_script} \
-        --vcf ${vcf} \
-        --samplesheet ${samplesheet} \
-        --tree-method ${tree_method} \
-        --legend-order ${legend_order}
+    python "$popgen_script" \
+        --vcf "$vcf" \
+        --samplesheet "$samplesheet" \
+        --tree-method "$tree_method" \
+        --legend-order "$legend_order"
     """
 }

@@ -17,7 +17,7 @@ process FASTP {
     def libraryId = meta.unit_id ?: meta.library ?: meta.id
     def reportId = "${meta.id}_${libraryId}".replaceAll(/[^A-Za-z0-9._-]+/, '_')
     """
-    fastp --in1 $read1 --in2 $read2 --out1 ${reportId}_1.fastp.fq.gz --out2 ${reportId}_2.fastp.fq.gz --json ${reportId}.fastp.json --html ${reportId}.fastp.html --thread ${task.cpus} $args
+    fastp --in1 "$read1" --in2 "$read2" --out1 "${reportId}_1.fastp.fq.gz" --out2 "${reportId}_2.fastp.fq.gz" --json "${reportId}.fastp.json" --html "${reportId}.fastp.html" --thread ${task.cpus} $args
     """
 }
 
@@ -33,7 +33,7 @@ process FASTQC {
     
     script:
     """
-    fastqc -t ${task.cpus} -q $read1 $read2
+    fastqc -t ${task.cpus} -q "$read1" "$read2"
     """
 }
 
@@ -54,10 +54,10 @@ process TRIMMOMATIC {
     def unitId = meta.unit_id ?: meta.library ?: meta.id
     """
     trimmomatic PE -threads ${task.cpus} \\
-    $read1 $read2 \
-    ${unitId}_1.paired.fq.gz ${unitId}_1.unpaired.fq.gz \\
-    ${unitId}_2.paired.fq.gz ${unitId}_2.unpaired.fq.gz \\
-    $args \\
-    2> ${unitId}.trim.log
+    "$read1" "$read2" \
+    "${unitId}_1.paired.fq.gz" "${unitId}_1.unpaired.fq.gz" \
+    "${unitId}_2.paired.fq.gz" "${unitId}_2.unpaired.fq.gz" \
+    $args \
+    2> "${unitId}.trim.log"
     """
 }
