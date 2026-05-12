@@ -16,6 +16,11 @@ process GFF_TO_BED {
     // Safely strip the extension and replace with .bed
     def bed_name = gff.name.replaceAll(/\.gff(3)?$/, ".bed")
     """
-    gff2bed < "$gff" > "$bed_name"
+    tr -d '\r' < "$gff" \
+        | gff2bed \
+        | awk 'BEGIN { OFS = "\t" } NF >= 3 && \$1 !~ /^#/ && \$1 != "track" && \$1 != "browser" { print }' \
+        > "$bed_name"
+
+    [ -s "$bed_name" ] || { echo 'No valid BED records were produced from annotation input' >&2; exit 1; }
     """
 }
