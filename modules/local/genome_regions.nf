@@ -35,11 +35,13 @@ process FREEBAYES_COVERAGE_SAMBAMBA {
         path 'coverage.tsv', emit: coverage
     script:
     def threads = Math.max(1, (task.cpus ?: 1) as Integer)
+    def bamList = (bams instanceof Collection ? bams : [bams]).collect { it.toString() }.join('\n')
+    def baiList = (bais instanceof Collection ? bais : [bais]).collect { it.toString() }.join('\n')
     """
     set -euo pipefail
 
-    find -L . -maxdepth 1 -type f -name '*.bam' | LC_ALL=C sort > bam_paths.txt
-    find -L . -maxdepth 1 -type f -name '*.bai' | LC_ALL=C sort > bai_paths.txt
+    printf '%s\n' "${bamList}" | LC_ALL=C sort > bam_paths.txt
+    printf '%s\n' "${baiList}" | LC_ALL=C sort > bai_paths.txt
     [ -s bam_paths.txt ] || { echo 'No staged BAM inputs discovered for FREEBAYES_COVERAGE_SAMBAMBA' >&2; exit 1; }
     [ -s bai_paths.txt ] || { echo 'No staged BAI inputs discovered for FREEBAYES_COVERAGE_SAMBAMBA' >&2; exit 1; }
     [ "\$(wc -l < bam_paths.txt)" -eq "\$(wc -l < bai_paths.txt)" ] || {
@@ -66,11 +68,13 @@ process FREEBAYES_COVERAGE_MOSDEPTH {
         path 'mosdepth/*.per-base.bed.gz', emit: per_base
     script:
     def threads = Math.max(1, (task.cpus ?: 1) as Integer)
+    def bamList = (bams instanceof Collection ? bams : [bams]).collect { it.toString() }.join('\n')
+    def baiList = (bais instanceof Collection ? bais : [bais]).collect { it.toString() }.join('\n')
     """
     set -euo pipefail
 
-    find -L . -maxdepth 1 -type f -name '*.bam' | LC_ALL=C sort > bam_paths.txt
-    find -L . -maxdepth 1 -type f -name '*.bai' | LC_ALL=C sort > bai_paths.txt
+    printf '%s\n' "${bamList}" | LC_ALL=C sort > bam_paths.txt
+    printf '%s\n' "${baiList}" | LC_ALL=C sort > bai_paths.txt
     [ -s bam_paths.txt ] || { echo 'No staged BAM inputs discovered for FREEBAYES_COVERAGE_MOSDEPTH' >&2; exit 1; }
     [ -s bai_paths.txt ] || { echo 'No staged BAI inputs discovered for FREEBAYES_COVERAGE_MOSDEPTH' >&2; exit 1; }
     [ "\$(wc -l < bam_paths.txt)" -eq "\$(wc -l < bai_paths.txt)" ] || {
@@ -139,12 +143,13 @@ process FREEBAYES_SPLIT_REGIONS_MOSDEPTH {
         path 'regions/*.regions.txt', emit: regions
     script:
     def target = target_region_count.toString().trim()
+    def perBaseList = (per_base_files instanceof Collection ? per_base_files : [per_base_files]).collect { it.toString() }.join('\n')
     """
     set -euo pipefail
 
     mkdir -p regions
 
-    find -L . -type f -name '*.per-base.bed.gz' | LC_ALL=C sort > per_base_files.list
+    printf '%s\n' "${perBaseList}" | LC_ALL=C sort > per_base_files.list
     [ -s per_base_files.list ] || { echo 'No staged mosdepth per-base BED inputs discovered' >&2; exit 1; }
 
     python3 "$mosdepth_script" "$ref_idx" \$(cat per_base_files.list) \

@@ -8,17 +8,18 @@ process FREEBAYES {
     output:
         path "${meta.id}.vcf.gz", emit: vcf
         path "${meta.id}.vcf.gz.tbi", emit: tbi
-        path "${meta.id}.freebayes_diagnostics_*.tsv", optional: true, emit: diagnostics
+        path "${meta.id}.freebayes_diagnostics/*.tsv", optional: true, emit: diagnostics
     script:
     def args = task.ext.args ?: ''
     def threads = Math.max(1, (task.cpus ?: 1) as Integer)
+    def regionFileList = region_files.collect { it.toString() }.join('\n')
     def diagnosticsDir = "${meta.id}.freebayes_diagnostics"
     def diagnosticsPrefix = "${meta.id}.freebayes_diagnostics"
     def debugEnabled = params.freebayes_debug ? 'true' : 'false'
     """
     set -euo pipefail
 
-    find -L . -type f -name '*.regions.txt' | LC_ALL=C sort > region_file_paths.txt
+    printf '%s\n' "${regionFileList}" | LC_ALL=C sort > region_file_paths.txt
     [ -s region_file_paths.txt ] || { echo 'No staged region files discovered for FREEBAYES' >&2; exit 1; }
     xargs cat < region_file_paths.txt > chromosome_regions.txt
 
@@ -66,11 +67,11 @@ process FREEBAYES {
         find ${diagnosticsDir}/metrics -type f -name '*.tsv' | LC_ALL=C sort > metric_files.list
         [ -s metric_files.list ] || { echo 'No Freebayes diagnostic metrics were produced' >&2; exit 1; }
 
-        printf 'chunk_id\tregion\texit_status\tstart_epoch\tend_epoch\tduration_seconds\tvcf_path\n' > ${diagnosticsPrefix}_region_runtime.tsv
-        xargs cat < metric_files.list >> ${diagnosticsPrefix}_region_runtime.tsv
+        printf 'chunk_id\tregion\texit_status\tstart_epoch\tend_epoch\tduration_seconds\tvcf_path\n' > ${diagnosticsDir}/${diagnosticsPrefix}_region_runtime.tsv
+        xargs cat < metric_files.list >> ${diagnosticsDir}/${diagnosticsPrefix}_region_runtime.tsv
 
-        printf 'chunk_id\tregion\texit_status\tstart_epoch\tend_epoch\tduration_seconds\tvcf_path\n' > ${diagnosticsPrefix}_slowest_regions.tsv
-        tail -n +2 ${diagnosticsPrefix}_region_runtime.tsv | LC_ALL=C sort -t \$'\t' -k6,6nr | awk 'NR <= 10' >> ${diagnosticsPrefix}_slowest_regions.tsv
+        printf 'chunk_id\tregion\texit_status\tstart_epoch\tend_epoch\tduration_seconds\tvcf_path\n' > ${diagnosticsDir}/${diagnosticsPrefix}_slowest_regions.tsv
+        tail -n +2 ${diagnosticsDir}/${diagnosticsPrefix}_region_runtime.tsv | LC_ALL=C sort -t \$'\t' -k6,6nr | awk 'NR <= 10' >> ${diagnosticsDir}/${diagnosticsPrefix}_slowest_regions.tsv
     fi
 
     if [ "\$xargs_status" -ne 0 ]; then
@@ -111,13 +112,14 @@ process FREEBAYES_POPULATION {
     script:
     def args = task.ext.args ?: ''
     def threads = Math.max(1, (task.cpus ?: 1) as Integer)
+    def bamList = bams.collect { it.toString() }.join('\n')
     def diagnosticsDir = "${meta.id}.freebayes_diagnostics"
     def diagnosticsPrefix = "${meta.id}.freebayes_diagnostics"
     def debugEnabled = params.freebayes_debug ? 'true' : 'false'
     """
     set -euo pipefail
 
-    find -L . -type f -name '*.bam' | LC_ALL=C sort > bam_list.txt
+    printf '%s\n' "${bamList}" | LC_ALL=C sort > bam_list.txt
     [ -s bam_list.txt ] || { echo 'No staged BAM inputs discovered for FREEBAYES_POPULATION' >&2; exit 1; }
 
     mkdir -p chunks
