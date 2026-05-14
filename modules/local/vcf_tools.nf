@@ -8,7 +8,9 @@ process BCFTOOLS_MERGE {
     output: path "merged.vcf.gz", emit: vcf
     script:
     """
-    printf '%s\\n' "$vcfs" > vcf_list.txt
+    echo ${vcfs.join('\n')} > vcf_list.txt
+    # find -L . -type f -name '*.bam' | LC_ALL=C sort > vcf_list.txt
+    # printf '%s\\n' "$vcfs" > vcf_list.txt
     bcftools merge --force-samples -l vcf_list.txt -O z -o merged.vcf.gz
     """
 }
@@ -24,7 +26,8 @@ process BCFTOOLS_CONCAT {
         path "population.vcf.gz.tbi", emit: tbi
     script:
     """
-    printf '%s\\n' "$vcfs" > vcf_list.txt
+    echo ${vcfs.join('\n')} > vcf_list.txt
+    # find -L . -type f -name '*.bam' | LC_ALL=C sort > vcf_list.txt
     bcftools concat -f vcf_list.txt -Oz -o population.vcf.gz
     tabix -p vcf population.vcf.gz
     """
