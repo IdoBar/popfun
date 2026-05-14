@@ -98,7 +98,7 @@ process VCF_ENSEMBLE_COMBINE {
     {
         {
             bcftools view -h gatk.norm.vcf.gz | grep -v '^#CHROM'
-            bcftools view -h freebayes.norm.vcf.gz | grep -v '^#CHROM'
+            bcftools view -h freebayes.norm.vcf.gz | awk '!/^##FORMAT=<ID=GQ,/' | grep -v '^#CHROM'
         } | awk '!seen[\$0]++'
         printf '##INFO=<ID=CALLERS,Number=.,Type=String,Description="Callers reporting this variant">\\n'
         printf '##INFO=<ID=NUM_CALLERS,Number=1,Type=Integer,Description="Number of callers supporting this variant">\\n'
@@ -117,12 +117,39 @@ process VCF_ENSEMBLE_COMBINE {
     ' gatk.keep.tsv - > gatk.selected.vcf
 
     bcftools view -H freebayes.norm.vcf.gz | awk 'BEGIN{FS=OFS="\\t"}
+        function normalize_gq(format_field, sample_field,    format_parts, sample_parts, gq_idx, idx, rebuilt) {
+            gq_idx = 0
+            split(format_field, format_parts, ":")
+            for (idx = 1; idx <= length(format_parts); idx++) {
+                if (format_parts[idx] == "GQ") {
+                    gq_idx = idx
+                    break
+                }
+            }
+            if (!gq_idx) {
+                return sample_field
+            }
+
+            split(sample_field, sample_parts, ":")
+            if ((gq_idx in sample_parts) && sample_parts[gq_idx] != "." && sample_parts[gq_idx] != "") {
+                sample_parts[gq_idx] = sprintf("%d", sample_parts[gq_idx] + 0)
+            }
+
+            rebuilt = sample_parts[1]
+            for (idx = 2; idx <= length(sample_parts); idx++) {
+                rebuilt = rebuilt ":" sample_parts[idx]
+            }
+            return rebuilt
+        }
         NR==FNR { keep[\$1 FS \$2 FS \$3 FS \$4] = 1; next }
         {
             key = \$1 FS \$2 FS \$4 FS \$5
             if (!keep[key]) next
             info = (\$8 == ".") ? "CALLERS=gatk,freebayes;NUM_CALLERS=2" : \$8 ";CALLERS=gatk,freebayes;NUM_CALLERS=2"
             \$8 = info
+            for (sample_idx = 10; sample_idx <= NF; sample_idx++) {
+                \$sample_idx = normalize_gq(\$9, \$sample_idx)
+            }
             print
         }
     ' freebayes.keep.tsv - > freebayes.selected.vcf
