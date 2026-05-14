@@ -8,7 +8,7 @@ process BCFTOOLS_MERGE {
     output: path "merged.vcf.gz", emit: vcf
     script:
     """
-    printf '%s\n' $vcfs > vcf_list.txt
+    printf '%s\\n' "$vcfs" > vcf_list.txt
     bcftools merge --force-samples -l vcf_list.txt -O z -o merged.vcf.gz
     """
 }
