@@ -20,6 +20,7 @@ workflow POPFUN {
     def valid_stop_steps = ['qc', 'alignment', 'call', 'filter', 'multiqc']
     def valid_markdup_tools = ['gatk', 'bamsormadup', 'sambamba', 'fastdup']
     def valid_callers = ['freebayes', 'gatk', 'ensemble']
+    def valid_ensemble_matchers = ['bcftools', 'rtg']
     def valid_error_estimate_callers = ['freebayes', 'gatk']
     def valid_freebayes_region_splitters = ['fai', 'coverage']
     def valid_freebayes_coverage_backends = ['sambamba', 'mosdepth']
@@ -48,6 +49,9 @@ workflow POPFUN {
     }
     if (!valid_callers.contains(params.caller)) {
         error "Invalid --caller '${params.caller}'. Supported values: ${valid_callers.join(', ')}"
+    }
+    if (!valid_ensemble_matchers.contains(params.ensemble_matcher)) {
+        error "Invalid --ensemble_matcher '${params.ensemble_matcher}'. Supported values: ${valid_ensemble_matchers.join(', ')}"
     }
     if (configuredErrorEstimateCaller && !valid_error_estimate_callers.contains(configuredErrorEstimateCaller)) {
         error "Invalid --error_estimate_caller '${params.error_estimate_caller}'. Supported values: ${valid_error_estimate_callers.join(', ')}"

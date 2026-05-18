@@ -48,7 +48,7 @@ process BCFTOOLS_STATS {
 
 process VCF_ENSEMBLE_COMBINE {
     label 'sc_medium'
-    conda "bioconda::bcftools=1.23.1"
+    conda "bioconda::bcftools=1.23.1 bioconda::rtg-tools=3.13"
     container 'quay.io/biocontainers/bcftools:1.23.1--hb2cee57_0'
     input:
         path vcf_gatk
@@ -68,8 +68,31 @@ process VCF_ENSEMBLE_COMBINE {
     bcftools norm -f "$ref" -m -any -O z -o freebayes.norm.vcf.gz "$vcf_fb"
     tabix -f -p vcf freebayes.norm.vcf.gz
 
-    bcftools query -f '%CHROM\\t%POS\\t%REF\\t%ALT\\t%QUAL\\n' gatk.norm.vcf.gz | sort -k1,1 -k2,2n -k3,3 -k4,4 > gatk.tsv
-    bcftools query -f '%CHROM\\t%POS\\t%REF\\t%ALT\\t%QUAL\\n' freebayes.norm.vcf.gz | sort -k1,1 -k2,2n -k3,3 -k4,4 > freebayes.tsv
+    matcher="${params.ensemble_matcher}"
+    if [[ "$matcher" == "bcftools" ]]; then
+        bcftools query -f '%CHROM\\t%POS\\t%REF\\t%ALT\\t%QUAL\\n' gatk.norm.vcf.gz | sort -k1,1 -k2,2n -k3,3 -k4,4 > gatk.tsv
+        bcftools query -f '%CHROM\\t%POS\\t%REF\\t%ALT\\t%QUAL\\n' freebayes.norm.vcf.gz | sort -k1,1 -k2,2n -k3,3 -k4,4 > freebayes.tsv
+    elif [[ "$matcher" == "rtg" ]]; then
+        if ! command -v rtg >/dev/null 2>&1; then
+            echo "--ensemble_matcher rtg requires rtg-tools on PATH (try -profile conda or a container with both rtg-tools and bcftools)." >&2
+            exit 1
+        fi
+
+        rtg format -o ref.sdf "$ref"
+        rtg vcfeval \
+            --baseline gatk.norm.vcf.gz \
+            --calls freebayes.norm.vcf.gz \
+            --template ref.sdf \
+            --output vcfeval_out \
+            --all-records \
+            --squash-ploidy
+
+        bcftools query -f '%CHROM\\t%POS\\t%REF\\t%ALT\\t%QUAL\\n' vcfeval_out/tp-baseline.vcf.gz | sort -k1,1 -k2,2n -k3,3 -k4,4 > gatk.tsv
+        bcftools query -f '%CHROM\\t%POS\\t%REF\\t%ALT\\t%QUAL\\n' vcfeval_out/tp.vcf.gz | sort -k1,1 -k2,2n -k3,3 -k4,4 > freebayes.tsv
+    else
+        echo "Unsupported --ensemble_matcher '$matcher'" >&2
+        exit 1
+    fi
 
     awk 'BEGIN { FS=OFS="\\t" }
         NR==FNR {

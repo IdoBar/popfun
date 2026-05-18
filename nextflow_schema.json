@@ -24,6 +24,12 @@
           "default": "ILLUMINACLIP:TruSeq3-PE.fa:2:30:10 LEADING:3 TRAILING:3 SLIDINGWINDOW:4:15 MINLEN:36"},
         "aligner": { "type": "string", "enum": ["bwa-mem2", "bowtie2"], "default": "bwa-mem2" },
         "caller": { "type": "string", "enum": ["gatk", "freebayes", "ensemble"], "default": "freebayes" },
+        "ensemble_matcher": {
+          "type": "string",
+          "enum": ["bcftools", "rtg"],
+          "default": "bcftools",
+          "description": "Matching engine for --caller ensemble. 'bcftools' performs strict key-based matching after normalization; 'rtg' uses rtg vcfeval to derive shared calls before final selection."
+        },
         "error_estimate_caller": {
           "type": ["string", "null"],
           "enum": ["gatk", "freebayes", null],

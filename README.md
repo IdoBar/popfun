@@ -110,7 +110,8 @@ PopFun allows you to bypass expensive indexing steps by providing pre-built dire
 * `--freebayes_coverage_regions`: Target number of coverage-balanced regions to generate when `--freebayes_region_splitter coverage` is used. (Default: `500`).
 * `--freebayes_max_chunks`: Maximum number of generated Freebayes target regions allowed in the largest per-chromosome region file before the workflow aborts and asks for coarser chunking. (Default: `2000`).
 * `--freebayes_debug`: Save Freebayes per-region TSV timing diagnostics when `true`. (Default: `false`).
-* `--caller ensemble` currently uses one fixed strategy: strict intersection of filtered, reference-normalized (`bcftools norm -f`) GATK and Freebayes population calls, keeping the higher-QUAL record at each shared site.
+* `--ensemble_matcher`: Matching engine used when `--caller ensemble`: `bcftools` (default) or `rtg`.
+* `--caller ensemble` currently uses strict intersection of filtered, reference-normalized (`bcftools norm -f`) GATK and Freebayes population calls, keeping the higher-QUAL record at each shared site. With `--ensemble_matcher rtg`, matching is derived from `rtg vcfeval` true-positive outputs before the same higher-QUAL selection step.
 * `--error_estimate`: `false` (default) or `true`
 * `--popgen`: Run population genetics module (PCA + phylogenetic tree) from final cohort VCF and add to MultiQC (Default: `false`).
 * `--popgen_tree_method`: Tree construction method for population genetics (`upgma`, `nj`, `ml`, or `bayesian`, Default: `upgma`).
@@ -140,6 +141,8 @@ Note: If Freebayes region generation exceeds `--freebayes_max_chunks` (default: 
 Note: When `--freebayes_debug true` is enabled, each Freebayes task writes `.freebayes_diagnostics` debug files containing a `region_runtime.tsv` timing table and a `slowest_regions.tsv` summary of the longest-running regions. These tables include an absolute chunk `vcf_path` for each chunk. These files are skipped by default.
 
 Note: `--caller ensemble` currently requires `--freebayes_mode population`. When `--error_estimate true` is also enabled, the error-estimation branch defaults to `--error_estimate_caller freebayes`; override this with `--error_estimate_caller gatk` if you want GATK-based per-library error estimation instead.
+
+Note: `--ensemble_matcher rtg` requires `rtg-tools` at runtime. The bundled process container includes `bcftools`; if you use Docker/Singularity/Apptainer profiles, use an environment/container that also provides `rtg`, or run with `-profile conda`.
 
 * `--filter_qual`: Minimum QUAL score (Default: `30`)
 * `--filter_min_dp`: Minimum Depth (Default: `10`)
