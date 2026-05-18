@@ -35,7 +35,7 @@ By default, **PopFun** performs the following steps:
     * *Supports Freebayes population-level calling, or individual sample calling + merging.*
     * *Population mode can split chromosomes into multiple sub-regions for finer internal Freebayes region fan-out using either fixed-size FASTA chunks or BAI data-aware regioning.*
     * *After global region generation, per-chromosome region files are produced so each population shard remains chromosome-scoped for concatenation.*
-    * *`--caller ensemble` runs both GATK and Freebayes population calling, keeps only shared normalized REF/ALT calls, retains the higher-QUAL representation at each shared site, and also reports the raw caller VCFs in the results directory.*
+    * *`--caller ensemble` runs both GATK and Freebayes population calling, filters each caller VCF first, then combines only shared REF/ALT calls after reference-aware normalization (`bcftools norm -f`). At each shared site, it retains the higher-QUAL representation and reports raw caller VCFs in the results directory.*
 7. **Error Estimation (Optional)**: If `--error_estimate true` is flagged, the pipeline automatically separates replicate libraries, calls variants on them independently, and calculates genotype discordance rates using a custom Python module. The raw per-library VCFs used in this comparison are also retained in `results/variants/error_estimate_libraries/`.
 8. **Population Genetics (Optional)**: If `--popgen true`, PopFun performs PCA (PC1-PC3) and constructs a phylogenetic tree from the final cohort VCF (regardless of variant caller and calling mode), then adds both panels to MultiQC. If a `pop` column is present in the samplesheet, it is used to color PCA markers and tree nodes.
 9. **Variant Filtering**: Strictly filters VCFs based on Depth (DP), Quality (QUAL), and polymorphism, while recalculating INFO tags (`bcftools +fill-tags`). Outputs distinct `.snps.vcf` and `.indels.vcf` files.
@@ -110,7 +110,7 @@ PopFun allows you to bypass expensive indexing steps by providing pre-built dire
 * `--freebayes_coverage_regions`: Target number of coverage-balanced regions to generate when `--freebayes_region_splitter coverage` is used. (Default: `500`).
 * `--freebayes_max_chunks`: Maximum number of generated Freebayes target regions allowed in the largest per-chromosome region file before the workflow aborts and asks for coarser chunking. (Default: `2000`).
 * `--freebayes_debug`: Save Freebayes per-region TSV timing diagnostics when `true`. (Default: `false`).
-* `--caller ensemble` currently uses one fixed strategy: strict intersection of normalized GATK and Freebayes population calls, keeping the higher-QUAL record at each shared site.
+* `--caller ensemble` currently uses one fixed strategy: strict intersection of filtered, reference-normalized (`bcftools norm -f`) GATK and Freebayes population calls, keeping the higher-QUAL record at each shared site.
 * `--error_estimate`: `false` (default) or `true`
 * `--popgen`: Run population genetics module (PCA + phylogenetic tree) from final cohort VCF and add to MultiQC (Default: `false`).
 * `--popgen_tree_method`: Tree construction method for population genetics (`upgma`, `nj`, `ml`, or `bayesian`, Default: `upgma`).
@@ -162,9 +162,9 @@ Upon completion, the `--outdir` will contain the following structured directorie
         ├── individual/       # Raw per-sample VCFs (if using individual mode)
         ├── merged/           # Raw aggregated VCF (if using individual mode)
         ├── population/       # Raw aggregated VCF from chromosome-parallel Freebayes population mode
-        ├── ensemble/         # Raw ensemble VCF from shared GATK + Freebayes calls
+        ├── ensemble/         # Raw ensemble VCF from shared filtered GATK + Freebayes calls (after reference-aware normalization)
         ├── gatk/             # Joint-called raw GATK cohort VCF (used directly in `--caller gatk` and retained in `--caller ensemble`)
-        └── filtered/         # FINAL processed VCFs (SNPs, Indels, and combined)
+        └── filtered/         # FINAL processed VCFs (SNPs, Indels, and combined), plus caller-specific filtered inputs used by `--caller ensemble`
 ```
 
 ## Credits

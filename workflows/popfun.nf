@@ -560,7 +560,8 @@ workflow POPFUN {
             VCF_FILTER_ENS_GATK.out.filtered_vcf.map { meta, vcf -> vcf },
             VCF_FILTER_ENS_GATK.out.filtered_vcf_tbi.map { meta, tbi -> tbi },
             VCF_FILTER_ENS_FB.out.filtered_vcf.map { meta, vcf -> vcf },
-            VCF_FILTER_ENS_FB.out.filtered_vcf_tbi.map { meta, tbi -> tbi }
+            VCF_FILTER_ENS_FB.out.filtered_vcf_tbi.map { meta, tbi -> tbi },
+            ch_ref
         )
         ch_final_vcf = VCF_ENSEMBLE_COMBINE.out.vcf.map { label, vcf, tbi -> tuple([id: label], vcf) }
 

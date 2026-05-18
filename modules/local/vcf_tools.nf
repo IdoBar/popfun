@@ -55,16 +55,17 @@ process VCF_ENSEMBLE_COMBINE {
         path tbi_gatk
         path vcf_fb
         path tbi_fb
+        path ref
     output:
         tuple val('ensemble'), path('ensemble.vcf.gz'), path('ensemble.vcf.gz.tbi'), emit: vcf
     script:
     """
     set -euo pipefail
 
-    bcftools norm -m -any -O z -o gatk.norm.vcf.gz "$vcf_gatk"
+    bcftools norm -f "$ref" -m -any -O z -o gatk.norm.vcf.gz "$vcf_gatk"
     tabix -f -p vcf gatk.norm.vcf.gz
 
-    bcftools norm -m -any -O z -o freebayes.norm.vcf.gz "$vcf_fb"
+    bcftools norm -f "$ref" -m -any -O z -o freebayes.norm.vcf.gz "$vcf_fb"
     tabix -f -p vcf freebayes.norm.vcf.gz
 
     bcftools query -f '%CHROM\\t%POS\\t%REF\\t%ALT\\t%QUAL\\n' gatk.norm.vcf.gz | sort -k1,1 -k2,2n -k3,3 -k4,4 > gatk.tsv

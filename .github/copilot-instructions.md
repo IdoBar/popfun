@@ -22,6 +22,7 @@ Start here:
 - Preserve nf-core style metadata tuples and maps (`meta` maps and tuple contracts) across module boundaries.
 - Do not change emitted channel shapes unless every consumer is updated in the same change.
 - Prefer minimal, targeted edits and simple code solutions that relies minimally on loops utilising internal variables; avoid broad refactors in this repository.
+- **Before making any changes to the workflow logic in [workflows/popfun.nf](../workflows/popfun.nf) (especially channel flow, variant calling paths, or filtering/combining steps), stop and explicitly ask the user to confirm the proposed change.** Do not implement workflow logic changes autonomously without user confirmation.
 
 ## Scoped Instruction Files
 
