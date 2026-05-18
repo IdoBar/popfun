@@ -9,7 +9,7 @@ include { BCFTOOLS_MERGE; BCFTOOLS_CONCAT; VCF_ENSEMBLE_COMBINE } from '../modul
 include { GENERATE_SOFTWARE_VERSIONS_MQC; MULTIQC } from '../modules/local/multiqc'
 include { POPGEN_ANALYSES } from '../modules/local/popgen'
 include { MARK_DUPLICATES_LIB; MARK_DUPLICATES_LIB_BAMSORMADUP; MARK_DUPLICATES_LIB_SAMBAMBA; MARK_DUPLICATES_LIB_FASTDUP; GATK_CALL_LIB; FREEBAYES_CALL_LIB; VCF_MULTI_COMPARE as VCF_MULTI_COMPARE_RAW; VCF_MULTI_COMPARE as VCF_MULTI_COMPARE_FILTERED; VCF_DISCORDANCE_MQC } from '../modules/local/error_tools'
-include { VCF_FILTER as VCF_FILTER_LIB; VCF_FILTER as VCF_FILTER_FINAL } from '../modules/local/vcf_filter'
+include { VCF_FILTER as VCF_FILTER_LIB; VCF_FILTER as VCF_FILTER_FINAL; VCF_FILTER as VCF_FILTER_ENS_GATK; VCF_FILTER as VCF_FILTER_ENS_FB } from '../modules/local/vcf_filter'
 include { BCFTOOLS_STATS as BCFTOOLS_STATS_RAW; BCFTOOLS_STATS as BCFTOOLS_STATS_FILTERED } from '../modules/local/vcf_tools'
 
 workflow POPFUN {
@@ -548,12 +548,19 @@ workflow POPFUN {
         GATK_COMBINEGVCFS(ch_ens_gvcfs, ch_ens_tbis, ch_ref, ch_ref_fai, ch_ref_dict)
         GATK_GENOTYPEGVCFS(GATK_COMBINEGVCFS.out.gvcf, GATK_COMBINEGVCFS.out.tbi, ch_ref, ch_ref_fai, ch_ref_dict)
 
-        // --- Combine ---
+        // --- Filter individual caller VCFs before ensemble combine ---
+        ch_ens_gatk_for_filter = GATK_GENOTYPEGVCFS.out.vcf.map { vcf -> tuple([id: "gatk_joint"], vcf) }
+        VCF_FILTER_ENS_GATK(ch_ens_gatk_for_filter)
+
+        ch_ens_fb_for_filter = BCFTOOLS_CONCAT.out.vcf.map { vcf -> tuple([id: "population"], vcf) }
+        VCF_FILTER_ENS_FB(ch_ens_fb_for_filter)
+
+        // --- Combine filtered VCFs ---
         VCF_ENSEMBLE_COMBINE(
-            GATK_GENOTYPEGVCFS.out.vcf,
-            GATK_GENOTYPEGVCFS.out.tbi,
-            BCFTOOLS_CONCAT.out.vcf,
-            BCFTOOLS_CONCAT.out.tbi
+            VCF_FILTER_ENS_GATK.out.filtered_vcf.map { meta, vcf -> vcf },
+            VCF_FILTER_ENS_GATK.out.filtered_vcf_tbi.map { meta, tbi -> tbi },
+            VCF_FILTER_ENS_FB.out.filtered_vcf.map { meta, vcf -> vcf },
+            VCF_FILTER_ENS_FB.out.filtered_vcf_tbi.map { meta, tbi -> tbi }
         )
         ch_final_vcf = VCF_ENSEMBLE_COMBINE.out.vcf.map { label, vcf, tbi -> tuple([id: label], vcf) }
 
