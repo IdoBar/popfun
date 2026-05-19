@@ -46,8 +46,8 @@
         "freebayes_region_splitter": {
           "type": "string",
           "enum": ["fai", "coverage"],
-          "default": "fai",
-          "description": "How to split regions for Freebayes parallel region fan-out: fixed-size FASTA chunks ('fai') or coverage-balanced regions ('coverage')."
+          "default": "coverage",
+          "description": "How to split regions for Freebayes parallel region fan-out: coverage-balanced regions ('coverage') or fixed-size FASTA chunks ('fai')."
         },
         "freebayes_chunk_size": {
           "type": "integer",

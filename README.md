@@ -104,7 +104,7 @@ PopFun allows you to bypass expensive indexing steps by providing pre-built dire
 * `--error_estimate_caller`: Caller used for the optional per-library error-estimation branch: `freebayes` or `gatk`. By default this follows `--caller`, except `--caller ensemble` defaults to `freebayes` for error estimation.
 * `--markdup_tool`: `bamsormadup` (default), `gatk`, `sambamba`, or `fastdup`
 * `--freebayes_mode`: `population` (default) or `individual`
-* `--freebayes_region_splitter`: Region splitting strategy for Freebayes fan-out: `fai` (default, fixed-size chunks from the FASTA index) or `coverage` (coverage-balanced chunks derived from alignment depth).
+* `--freebayes_region_splitter`: Region splitting strategy for Freebayes fan-out: `coverage` (default, coverage-balanced chunks derived from alignment depth) or `fai` (fixed-size chunks from the FASTA index).
 * `--freebayes_chunk_size`: Chunk size passed to `fasta_generate_regions.py` for splitting genomic regions in Freebayes population-mode. (Default: `100000`).
 * `--freebayes_coverage_backend`: Coverage backend used when `--freebayes_region_splitter coverage` is selected: `sambamba` (default) or `mosdepth` (prototype).
 * `--freebayes_coverage_regions`: Target number of coverage-balanced regions to generate when `--freebayes_region_splitter coverage` is used. (Default: `500`).

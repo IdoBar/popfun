@@ -25,7 +25,7 @@ process FREEBAYES_SPLIT_REGIONS {
 }
 
 process FREEBAYES_COVERAGE_SAMBAMBA {
-    label 'sc_small'
+    label 'mc_medium'
     conda "bioconda::sambamba=1.0.1"
     container 'quay.io/biocontainers/sambamba:1.0.1--h6f6fda4_1'
     input:
@@ -58,7 +58,7 @@ process FREEBAYES_COVERAGE_SAMBAMBA {
 }
 
 process FREEBAYES_COVERAGE_MOSDEPTH {
-    label 'sc_small'
+    label 'mc_medium'
     conda "bioconda::mosdepth=0.3.14"
     container 'quay.io/biocontainers/mosdepth:0.3.14--h05c3d44_0'
     input:
