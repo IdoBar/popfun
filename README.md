@@ -36,6 +36,7 @@ By default, **PopFun** performs the following steps:
     * *Population mode can split chromosomes into multiple sub-regions for finer internal Freebayes region fan-out using either fixed-size FASTA chunks or BAI data-aware regioning.*
     * *After global region generation, per-chromosome region files are produced so each population shard remains chromosome-scoped for concatenation.*
     * *`--caller ensemble` runs both GATK and Freebayes population calling, filters each caller VCF first, then combines only shared REF/ALT calls after reference-aware normalization (`bcftools norm -f`). At each shared site, it retains the higher-QUAL representation and reports raw caller VCFs in the results directory.*
+    * `--save_bams` controls which BAM files are published to `results/aligned`: `none` (default) publishes no BAMs, `merged` publishes only merged BAMs under `results/aligned/merged`, and `all` publishes both individual aligned BAMs under `results/aligned/ind` and merged BAMs under `results/aligned/merged`.
 7. **Error Estimation (Optional)**: If `--error_estimate true` is flagged, the pipeline automatically separates replicate libraries, calls variants on them independently, and calculates genotype discordance rates using a custom Python module. The raw per-library VCFs used in this comparison are also retained in `results/variants/error_estimate_libraries/`.
 8. **Population Genetics (Optional)**: If `--popgen true`, PopFun performs PCA (PC1-PC3) and constructs a phylogenetic tree from the final cohort VCF (regardless of variant caller and calling mode), then adds both panels to MultiQC. If a `pop` column is present in the samplesheet, it is used to color PCA markers and tree nodes.
 9. **Variant Filtering**: Strictly filters VCFs based on Depth (DP), Quality (QUAL), and polymorphism, while recalculating INFO tags (`bcftools +fill-tags`). Outputs distinct `.snps.vcf` and `.indels.vcf` files.
@@ -153,7 +154,9 @@ Upon completion, the `--outdir` will contain the following structured directorie
 
 ```text
     results/
-    ├── aligned/              # Final, merged, deduplicated BAM files
+    ├── aligned/              # Optional BAM outputs when `--save_bams` is enabled
+    │   ├── ind/              # Individual aligned BAMs when `--save_bams all`
+    │   └── merged/           # Merged BAMs when `--save_bams merged` or `all`
     ├── error_estimates/      # CSV reports of replicate discordance rates
     ├── multiqc/              # Aggregated HTML QC report
     ├── population_genetics/  # PCA, phylogenetic tree, and intermediate population-genetics outputs

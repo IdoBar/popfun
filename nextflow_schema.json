@@ -42,6 +42,12 @@
           "default": "bamsormadup",
           "description": "Duplicate marking tool. 'gatk' uses GATK MarkDuplicates; 'bamsormadup' uses biobambam bamsormadup; 'sambamba' uses sambamba markdup; 'fastdup' uses FastDup (Picard-compatible, faster)."
         },
+        "save_bams": {
+          "type": "string",
+          "enum": ["none", "merged", "all"],
+          "default": "none",
+          "description": "Control which BAMs are published to the results directory. 'none' publishes no BAMs, 'merged' publishes merged BAMs only, and 'all' publishes both individual aligned BAMs and merged BAMs."
+        },
         "freebayes_mode": { "type": "string", "enum": ["individual", "population"], "default": "population" },
         "freebayes_region_splitter": {
           "type": "string",
