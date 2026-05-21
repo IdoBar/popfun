@@ -248,8 +248,8 @@ process GATK_COMBINEGVCFS {
     path ref_dict
 
     output:
-    path "cohort.g.vcf.gz", emit: gvcf
-    path "cohort.g.vcf.gz.tbi", emit: tbi
+    path "gatk_merged.g.vcf.gz", emit: gvcf
+    path "gatk_merged.g.vcf.gz.tbi", emit: tbi
 
     script:
     // Dynamically build the -V arguments for all input gVCFs
@@ -258,7 +258,7 @@ process GATK_COMBINEGVCFS {
     gatk --java-options "-Xmx${task.memory.toGiga()}g" CombineGVCFs \\
         -R "$ref" \\
         $input_args \\
-        -O cohort.g.vcf.gz
+        -O gatk_merged.g.vcf.gz
     """
 }
 
@@ -275,14 +275,14 @@ process GATK_GENOTYPEGVCFS {
     path ref_dict
 
     output:
-    path "joint_called.vcf.gz", emit: vcf
-    path "joint_called.vcf.gz.tbi", emit: tbi
+    path "gatk_joint.vcf.gz", emit: vcf
+    path "gatk_joint.vcf.gz.tbi", emit: tbi
 
     script:
     """
     gatk --java-options "-Xmx${task.memory.toGiga()}g" GenotypeGVCFs \\
         -R "$ref" \\
         -V "$gvcf" \\
-        -O joint_called.vcf.gz
+        -O gatk_joint.vcf.gz
     """
 }

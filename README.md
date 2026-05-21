@@ -106,7 +106,7 @@ PopFun allows you to bypass expensive indexing steps by providing pre-built dire
 * `--freebayes_mode`: `population` (default) or `individual`
 * `--freebayes_region_splitter`: Region splitting strategy for Freebayes fan-out: `coverage` (default, coverage-balanced chunks derived from alignment depth) or `fai` (fixed-size chunks from the FASTA index).
 * `--freebayes_chunk_size`: Chunk size passed to `fasta_generate_regions.py` for splitting genomic regions in Freebayes population-mode. (Default: `100000`).
-* `--freebayes_coverage_backend`: Coverage backend used when `--freebayes_region_splitter coverage` is selected: `sambamba` (default) or `mosdepth` (prototype).
+* `--freebayes_coverage_tool`: Coverage tool used when `--freebayes_region_splitter coverage` is selected: `mosdepth` (default) or `sambamba`.
 * `--freebayes_coverage_regions`: Target number of coverage-balanced regions to generate when `--freebayes_region_splitter coverage` is used. (Default: `500`).
 * `--freebayes_max_chunks`: Maximum number of generated Freebayes target regions allowed in the largest per-chromosome region file before the workflow aborts and asks for coarser chunking. (Default: `2000`).
 * `--freebayes_debug`: Save Freebayes per-region TSV timing diagnostics when `true`. (Default: `false`).
@@ -132,7 +132,7 @@ PopFun allows you to bypass expensive indexing steps by providing pre-built dire
 
 Note: Genotype-based filtering relies on valid `GQ` fields. By default, PopFun enables Freebayes `--genotype-qualities` (via `--freebayes_args`) so genotype qualities are emitted and filtering behaves as expected.
 
-Note: `--freebayes_region_splitter coverage` vendors the upstream Freebayes `coverage_to_regions.py` helper in `bin/`. The default `sambamba` backend uses the existing BioContainers `quay.io/biocontainers/sambamba:1.0.1--h6f6fda4_1` image to generate a coverage stream, then runs the helper in the off-the-shelf `python:3.11` image. The `mosdepth` backend is available as a prototype path using `quay.io/biocontainers/mosdepth:0.3.14--h05c3d44_0` plus a small adapter that converts mosdepth interval output back into the coverage stream expected by the vendored Freebayes helper.
+Note: `--freebayes_region_splitter coverage` vendors the upstream Freebayes `coverage_to_regions.py` helper in `bin/`. The default `mosdepth` backend uses `quay.io/biocontainers/mosdepth:0.3.14--h05c3d44_0` with a small adapter that converts mosdepth interval output into the coverage stream expected by the vendored Freebayes helper. The `sambamba` backend uses `quay.io/biocontainers/sambamba:1.0.1--h6f6fda4_1` to generate coverage directly.
 
 Note: Chunk-size tuning depends on how regions are generated. With `--freebayes_region_splitter coverage`, lower `--freebayes_coverage_regions` values produce coarser fan-out and higher values produce finer fan-out. With `--freebayes_region_splitter fai`, appropriate `--freebayes_chunk_size` values depend more on genome size and continuity; highly fragmented assemblies with thousands of contigs often work better with `coverage` splitting than with `fai` splitting.
 
@@ -141,8 +141,6 @@ Note: If Freebayes region generation exceeds `--freebayes_max_chunks` (default: 
 Note: When `--freebayes_debug true` is enabled, each Freebayes task writes `.freebayes_diagnostics` debug files containing a `region_runtime.tsv` timing table and a `slowest_regions.tsv` summary of the longest-running regions. These tables include an absolute chunk `vcf_path` for each chunk. These files are skipped by default.
 
 Note: `--caller ensemble` currently requires `--freebayes_mode population`. When `--error_estimate true` is also enabled, the error-estimation branch defaults to `--error_estimate_caller freebayes`; override this with `--error_estimate_caller gatk` if you want GATK-based per-library error estimation instead.
-
-Note: `--ensemble_matcher rtg` requires `rtg-tools` at runtime. The bundled process container includes `bcftools`; if you use Docker/Singularity/Apptainer profiles, use an environment/container that also provides `rtg`, or run with `-profile conda`.
 
 * `--filter_qual`: Minimum QUAL score (Default: `30`)
 * `--filter_min_dp`: Minimum Depth (Default: `10`)
@@ -162,13 +160,27 @@ Upon completion, the `--outdir` will contain the following structured directorie
     ├── qc/                   # Individual QC reports (Fastp, FastQC, Qualimap, BCFtools)
     └── variants/
         ├── error_estimate_libraries/ # Raw per-library VCFs used for error-rate estimation (`--error_estimate true`)
-        ├── individual/       # Raw per-sample VCFs (if using individual mode)
-        ├── merged/           # Raw aggregated VCF (if using individual mode)
-        ├── population/       # Raw aggregated VCF from chromosome-parallel Freebayes population mode
+        │   └── filtered/      # Filtered per-library VCFs for error-estimation comparisons
+        ├── fb_ind/           # Raw per-sample Freebayes VCFs (if using Freebayes individual mode)
+        ├── fb_merged/        # Raw merged Freebayes VCF (if using Freebayes individual mode)
+        ├── fb_pop/           # Raw Freebayes population VCF (if using Freebayes population mode)
+        │   └── filtered/      # Filtered Freebayes population VCF outputs
         ├── ensemble/         # Raw ensemble VCF from shared filtered GATK + Freebayes calls (after reference-aware normalization)
-        ├── gatk/             # Joint-called raw GATK cohort VCF (used directly in `--caller gatk` and retained in `--caller ensemble`)
-        └── filtered/         # FINAL processed VCFs (SNPs, Indels, and combined), plus caller-specific filtered inputs used by `--caller ensemble`
+        │   └── filtered/      # Filtered caller inputs used to build the ensemble set
+        ├── gatk_ind/         # Per-sample GATK gVCFs from HaplotypeCaller
+        ├── gatk_merged/      # Cohort-combined GATK gVCFs before joint genotyping
+        └── gatk_joint/       # Joint-called GATK cohort VCF (used directly in `--caller gatk` and retained in `--caller ensemble`)
+            └── filtered/      # Filtered GATK joint-call outputs
 ```
+
+Generated VCF filenames follow the same caller-prefix convention. Common examples include:
+
+* `results/variants/fb_pop/fb_pop.vcf.gz`
+* `results/variants/fb_merged/fb_merged.vcf.gz`
+* `results/variants/gatk_joint/gatk_joint.vcf.gz`
+* `results/variants/gatk_merged/gatk_merged.g.vcf.gz`
+* `results/variants/fb_pop/filtered/fb_pop.Q30.poly.vcf.gz`
+* `results/variants/gatk_joint/filtered/gatk_joint.Q30.poly.vcf.gz`
 
 ## Credits
 

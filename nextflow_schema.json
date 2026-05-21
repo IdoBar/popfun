@@ -55,11 +55,11 @@
           "minimum": 1,
           "description": "Chunk size passed to fasta_generate_regions.py for Freebayes population-mode sharding."
         },
-        "freebayes_coverage_backend": {
+        "freebayes_coverage_tool": {
           "type": "string",
           "enum": ["sambamba", "mosdepth"],
-          "default": "sambamba",
-          "description": "Coverage backend used when freebayes_region_splitter is set to 'coverage'. 'sambamba' uses sambamba depth base directly across all staged BAMs. 'mosdepth' is a prototype path that converts mosdepth per-base intervals back into the coverage stream expected by the vendored Freebayes helper."
+          "default": "mosdepth",
+          "description": "Coverage tool used when freebayes_region_splitter is set to 'coverage'. 'mosdepth' converts mosdepth per-base intervals into the coverage stream expected by the vendored Freebayes helper. 'sambamba' uses sambamba depth base directly across all staged BAMs."
         },
         "freebayes_coverage_regions": {
           "type": "integer",

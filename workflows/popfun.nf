@@ -5,7 +5,7 @@ include { GFF_TO_BED } from '../modules/local/annotation_prep'
 include { FREEBAYES_SPLIT_REGIONS; FREEBAYES_COVERAGE_SAMBAMBA; FREEBAYES_COVERAGE_MOSDEPTH; FREEBAYES_SPLIT_REGIONS_COVERAGE; FREEBAYES_SPLIT_REGIONS_MOSDEPTH } from '../modules/local/genome_regions'
 include { SAMTOOLS_MERGE; MARK_DUPLICATES; MARK_DUPLICATES_BAMSORMADUP; MARK_DUPLICATES_SAMBAMBA; MARK_DUPLICATES_FASTDUP; QUALIMAP } from '../modules/local/bam_tools'
 include { FREEBAYES_POPULATION; FREEBAYES; GATK_HAPLOTYPECALLER; GATK_COMBINEGVCFS; GATK_GENOTYPEGVCFS } from '../modules/local/variant_callers'
-include { BCFTOOLS_MERGE; BCFTOOLS_CONCAT; VCF_ENSEMBLE_COMBINE } from '../modules/local/vcf_tools'
+include { BCFTOOLS_MERGE; BCFTOOLS_CONCAT; VCF_ENSEMBLE_COMBINE; VCF_ENSEMBLE_NORMALIZE; VCF_ENSEMBLE_MATCH_RTG; VCF_ENSEMBLE_ASSEMBLE } from '../modules/local/vcf_tools'
 include { GENERATE_SOFTWARE_VERSIONS_MQC; MULTIQC } from '../modules/local/multiqc'
 include { POPGEN_ANALYSES } from '../modules/local/popgen'
 include { MARK_DUPLICATES_LIB; MARK_DUPLICATES_LIB_BAMSORMADUP; MARK_DUPLICATES_LIB_SAMBAMBA; MARK_DUPLICATES_LIB_FASTDUP; GATK_CALL_LIB; FREEBAYES_CALL_LIB; VCF_MULTI_COMPARE as VCF_MULTI_COMPARE_RAW; VCF_MULTI_COMPARE as VCF_MULTI_COMPARE_FILTERED; VCF_DISCORDANCE_MQC } from '../modules/local/error_tools'
@@ -23,7 +23,7 @@ workflow POPFUN {
     def valid_ensemble_matchers = ['bcftools', 'rtg']
     def valid_error_estimate_callers = ['freebayes', 'gatk']
     def valid_freebayes_region_splitters = ['fai', 'coverage']
-    def valid_freebayes_coverage_backends = ['sambamba', 'mosdepth']
+    def valid_freebayes_coverage_tools = ['sambamba', 'mosdepth']
     def parseWholeNumberParam = { value, name ->
         try {
             def parsed = new BigDecimal(value.toString().trim())
@@ -59,8 +59,8 @@ workflow POPFUN {
     if (!valid_freebayes_region_splitters.contains(params.freebayes_region_splitter)) {
         error "Invalid --freebayes_region_splitter '${params.freebayes_region_splitter}'. Supported values: ${valid_freebayes_region_splitters.join(', ')}"
     }
-    if (!valid_freebayes_coverage_backends.contains(params.freebayes_coverage_backend)) {
-        error "Invalid --freebayes_coverage_backend '${params.freebayes_coverage_backend}'. Supported values: ${valid_freebayes_coverage_backends.join(', ')}"
+    if (!valid_freebayes_coverage_tools.contains(params.freebayes_coverage_tool)) {
+        error "Invalid --freebayes_coverage_tool '${params.freebayes_coverage_tool}'. Supported values: ${valid_freebayes_coverage_tools.join(', ')}"
     }
     if (params.caller == 'ensemble' && params.freebayes_mode != 'population') {
         error "--caller ensemble currently requires --freebayes_mode population"
@@ -408,7 +408,7 @@ workflow POPFUN {
 
         def ch_population_region_files
         if (params.freebayes_region_splitter == 'coverage') {
-            if (params.freebayes_coverage_backend == 'sambamba') {
+            if (params.freebayes_coverage_tool == 'sambamba') {
                 FREEBAYES_COVERAGE_SAMBAMBA(ch_population_bams_raw, ch_population_bais_raw)
                 FREEBAYES_SPLIT_REGIONS_COVERAGE(
                     ch_ref_fai,
@@ -486,7 +486,7 @@ workflow POPFUN {
 
         def ch_ens_region_files
         if (params.freebayes_region_splitter == 'coverage') {
-            if (params.freebayes_coverage_backend == 'sambamba') {
+            if (params.freebayes_coverage_tool == 'sambamba') {
                 FREEBAYES_COVERAGE_SAMBAMBA(ch_ens_population_bams_raw, ch_ens_population_bais_raw)
                 FREEBAYES_SPLIT_REGIONS_COVERAGE(
                     ch_ref_fai,
@@ -559,15 +559,42 @@ workflow POPFUN {
         ch_ens_fb_for_filter = BCFTOOLS_CONCAT.out.vcf.map { vcf -> tuple([id: "population"], vcf) }
         VCF_FILTER_ENS_FB(ch_ens_fb_for_filter)
 
-        // --- Combine filtered VCFs ---
-        VCF_ENSEMBLE_COMBINE(
+        VCF_ENSEMBLE_NORMALIZE(
             VCF_FILTER_ENS_GATK.out.filtered_vcf.map { meta, vcf -> vcf },
             VCF_FILTER_ENS_GATK.out.filtered_vcf_tbi.map { meta, tbi -> tbi },
             VCF_FILTER_ENS_FB.out.filtered_vcf.map { meta, vcf -> vcf },
             VCF_FILTER_ENS_FB.out.filtered_vcf_tbi.map { meta, tbi -> tbi },
             ch_ref
         )
-        ch_final_vcf = VCF_ENSEMBLE_COMBINE.out.vcf.map { label, vcf, tbi -> tuple([id: label], vcf) }
+
+        if (params.ensemble_matcher == 'rtg') {
+            VCF_ENSEMBLE_MATCH_RTG(
+                VCF_ENSEMBLE_NORMALIZE.out.gatk_vcf,
+                VCF_ENSEMBLE_NORMALIZE.out.gatk_tbi,
+                VCF_ENSEMBLE_NORMALIZE.out.freebayes_vcf,
+                VCF_ENSEMBLE_NORMALIZE.out.freebayes_tbi,
+                ch_ref
+            )
+
+            VCF_ENSEMBLE_ASSEMBLE(
+                VCF_ENSEMBLE_NORMALIZE.out.gatk_vcf,
+                VCF_ENSEMBLE_NORMALIZE.out.gatk_tbi,
+                VCF_ENSEMBLE_NORMALIZE.out.freebayes_vcf,
+                VCF_ENSEMBLE_NORMALIZE.out.freebayes_tbi,
+                VCF_ENSEMBLE_MATCH_RTG.out.gatk_keep,
+                VCF_ENSEMBLE_MATCH_RTG.out.freebayes_keep
+            )
+            ch_final_vcf = VCF_ENSEMBLE_ASSEMBLE.out.vcf.map { label, vcf, tbi -> tuple([id: label], vcf) }
+        } else {
+            // --- Combine filtered VCFs ---
+            VCF_ENSEMBLE_COMBINE(
+                VCF_ENSEMBLE_NORMALIZE.out.gatk_vcf,
+                VCF_ENSEMBLE_NORMALIZE.out.gatk_tbi,
+                VCF_ENSEMBLE_NORMALIZE.out.freebayes_vcf,
+                VCF_ENSEMBLE_NORMALIZE.out.freebayes_tbi
+            )
+            ch_final_vcf = VCF_ENSEMBLE_COMBINE.out.vcf.map { label, vcf, tbi -> tuple([id: label], vcf) }
+        }
 
     } else {
         // Fallback: Individual Freebayes calling & standard merging
@@ -581,7 +608,7 @@ workflow POPFUN {
 
         def ch_individual_region_files
         if (params.freebayes_region_splitter == 'coverage') {
-            if (params.freebayes_coverage_backend == 'sambamba') {
+            if (params.freebayes_coverage_tool == 'sambamba') {
                 FREEBAYES_COVERAGE_SAMBAMBA(ch_individual_bams_raw, ch_individual_bais_raw)
                 FREEBAYES_SPLIT_REGIONS_COVERAGE(
                     ch_ref_fai,
