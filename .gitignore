@@ -1,2 +1,7 @@
 .copilot-tmp/
 .nextflow*
+/data/
+*.fastq
+*.fastq.gz
+*.fq
+*.fq.gz
