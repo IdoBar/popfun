@@ -55,10 +55,12 @@ process SAMTOOLS_SORT_ALIGN {
 
     output:
         tuple val(meta), path("*.sorted.bam"), emit: bam
+        tuple val(meta), path("*.sorted.bam.bai"), emit: bai
 
     script:
     def unitId = meta.unit_id ?: meta.library ?: meta.id
     """
     samtools sort -@ ${task.cpus} -o "${unitId}.sorted.bam" "$sam"
+    samtools index -@ ${task.cpus} "${unitId}.sorted.bam"
     """
 }

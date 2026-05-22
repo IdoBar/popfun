@@ -111,9 +111,9 @@
       "title": "Pipeline Logic",
       "type": "object",
       "properties": {
-        "start_step": {
+        "start_at": {
           "type": "string",
-          "enum": ["qc", "alignment"],
+          "enum": ["qc", "alignment", "call"],
           "default": "qc"
         },
         "stop_at": {

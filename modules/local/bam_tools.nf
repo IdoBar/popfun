@@ -11,6 +11,22 @@ process SAMTOOLS_MERGE {
     """
 }
 
+process SAMTOOLS_INDEX_INPUT_BAM {
+    tag "$meta.id"
+    label 'sc_medium'
+    conda "bioconda::samtools=1.23.1"
+    container 'quay.io/biocontainers/samtools:1.23.1--ha83d96e_0'
+    input: tuple val(meta), path(bam)
+    output:
+        tuple val(meta), path("${meta.id}_${meta.library}.sorted.bam"), emit: bam
+        tuple val(meta), path("${meta.id}_${meta.library}.sorted.bam.bai"), emit: bai
+    script:
+    """
+    ln -s "$bam" "${meta.id}_${meta.library}.sorted.bam"
+    samtools index -@ ${task.cpus} "${meta.id}_${meta.library}.sorted.bam"
+    """
+}
+
 process MARK_DUPLICATES {
     tag "$meta.id"
     label 'sc_medium'

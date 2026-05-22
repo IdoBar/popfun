@@ -209,18 +209,48 @@ process VCF_ENSEMBLE_MATCH_RTG {
         exit 1
     fi
 
-    rtg format -o ref.sdf "$ref"
-    rtg vcfeval \
-        --baseline "$gatk_norm_vcf" \
-        --calls "$freebayes_norm_vcf" \
-        --template ref.sdf \
-        --output vcfeval_out \
-        --all-records \
-        --squash-ploidy \
-        --sample "\$shared_sample"
+    # Check if VCF records and reference share contig names.
+    # If not, RTG vcfeval cannot evaluate and we fall back to direct normalized VCF matching.
+    awk '/^>/ {print substr(\$1, 2)}' "$ref" | LC_ALL=C sort -u > ref.contigs
+    gzip -dc "$gatk_norm_vcf" | awk '!/^#/ {print \$1}' | LC_ALL=C sort -u > gatk.contigs
+    gzip -dc "$freebayes_norm_vcf" | awk '!/^#/ {print \$1}' | LC_ALL=C sort -u > freebayes.contigs
 
-    gzip -dc vcfeval_out/tp-baseline.vcf.gz | awk 'BEGIN{FS=OFS="\t"} !/^#/ { print \$1, \$2, \$4, \$5, \$6 }' | sort -k1,1 -k2,2n -k3,3 -k4,4 > gatk.tsv
-    gzip -dc vcfeval_out/tp.vcf.gz | awk 'BEGIN{FS=OFS="\t"} !/^#/ { print \$1, \$2, \$4, \$5, \$6 }' | sort -k1,1 -k2,2n -k3,3 -k4,4 > freebayes.tsv
+    ref_gatk_overlap=\$(comm -12 ref.contigs gatk.contigs | head -n 1 || true)
+    ref_freebayes_overlap=\$(comm -12 ref.contigs freebayes.contigs | head -n 1 || true)
+
+    use_rtg=true
+    if [[ -z "\$ref_gatk_overlap" || -z "\$ref_freebayes_overlap" ]]; then
+        echo "Warning: No shared contig names between reference and one or both normalized VCFs; falling back to direct VCF overlap matching." >&2
+        use_rtg=false
+    fi
+
+    if [[ "\$use_rtg" == "true" ]]; then
+        rtg format -o ref.sdf "$ref"
+        if ! rtg vcfeval \
+            --baseline "$gatk_norm_vcf" \
+            --calls "$freebayes_norm_vcf" \
+            --template ref.sdf \
+            --output vcfeval_out \
+            --all-records \
+            --squash-ploidy \
+            --sample "\$shared_sample" 2> rtg.stderr; then
+            if grep -qi 'no sequence names in common' rtg.stderr; then
+                echo "Warning: RTG vcfeval failed due to contig-name mismatch; falling back to direct VCF overlap matching." >&2
+                use_rtg=false
+            else
+                cat rtg.stderr >&2
+                exit 1
+            fi
+        fi
+    fi
+
+    if [[ "\$use_rtg" == "true" ]]; then
+        gzip -dc vcfeval_out/tp-baseline.vcf.gz | awk 'BEGIN{FS=OFS="\t"} !/^#/ { print \$1, \$2, \$4, \$5, \$6 }' | sort -k1,1 -k2,2n -k3,3 -k4,4 > gatk.tsv
+        gzip -dc vcfeval_out/tp.vcf.gz | awk 'BEGIN{FS=OFS="\t"} !/^#/ { print \$1, \$2, \$4, \$5, \$6 }' | sort -k1,1 -k2,2n -k3,3 -k4,4 > freebayes.tsv
+    else
+        gzip -dc "$gatk_norm_vcf" | awk 'BEGIN{FS=OFS="\t"} !/^#/ { print \$1, \$2, \$4, \$5, \$6 }' | sort -k1,1 -k2,2n -k3,3 -k4,4 > gatk.tsv
+        gzip -dc "$freebayes_norm_vcf" | awk 'BEGIN{FS=OFS="\t"} !/^#/ { print \$1, \$2, \$4, \$5, \$6 }' | sort -k1,1 -k2,2n -k3,3 -k4,4 > freebayes.tsv
+    fi
 
     awk 'BEGIN { FS=OFS="\t" }
         NR==FNR {

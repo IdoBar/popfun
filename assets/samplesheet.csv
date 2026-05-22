@@ -1,7 +1,4 @@
-sample,library,fq1,fq2,pop
-24036,E250076893,data/24036.E250076893.250k.R1.fq.gz,data/24036.E250076893.250k.R2.fq.gz,Pop1
-24036,E250076916,data/24036.E250076916.250k.R1.fq.gz,data/24036.E250076916.250k.R2.fq.gz,Pop1
-24037,E250076893,data/24037.E250076893.250k.R1.fq.gz,data/24037.E250076893.250k.R2.fq.gz,Pop1
-24037,E250076916,data/24037.E250076916.250k.R1.fq.gz,data/24037.E250076916.250k.R2.fq.gz,Pop1
-24039,E250076893,data/24039.E250076893.250k.R1.fq.gz,data/24039.E250076893.250k.R2.fq.gz,Pop2
-24039,E250076916,data/24039.E250076916.250k.R1.fq.gz,data/24039.E250076916.250k.R2.fq.gz,Pop2
+sample,library,fq1,fq2,pop,bam
+24036,E250076893,https://zenodo.org/records/19284335/files/24036.E250076893.250k.R1.fq.gz,https://zenodo.org/records/19284335/files/24036.E250076893.250k.R2.fq.gz,Pop1,
+24036,E250076916,https://zenodo.org/records/19284335/files/24036.E250076916.250k.R1.fq.gz,https://zenodo.org/records/19284335/files/24036.E250076916.250k.R2.fq.gz,Pop1,
+24039,E250076919,https://zenodo.org/records/19284335/files/24039.E250076919.250k.R1.fq.gz,https://zenodo.org/records/19284335/files/24039.E250076919.250k.R2.fq.gz,Pop2,

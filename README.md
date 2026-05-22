@@ -20,6 +20,17 @@
 
 Built using Nextflow DSL2 and strictly adhering to nf-core data structures (including meta maps), PopFun bridges the gap between raw sequencing reads and high-quality, filtered variant calls. It is highly parameterized, automatically handles missing reference indices, and includes a parallel track for estimating error rates across replicate libraries of the same samples.
 
+## Requirements
+
+PopFun requires Nextflow plus one supported execution backend.
+
+- Nextflow: minimum supported `22.10.1`; recommended `23.04.4` or newer stable release
+- Java (for Nextflow runtime): recommended `OpenJDK 17`; minimum `Java 11`
+- Note: If remote URL staging fails with TLS/PSK warnings, upgrade to Java 17
+- One execution backend: Docker (recommended), Conda/Mamba, or Singularity/Apptainer
+- System tools: `bash`
+- Network access: required to pull remote containers and reference/input files (when URLs are used)
+
 ## Pipeline Summary
 
 By default, **PopFun** performs the following steps:
@@ -36,7 +47,7 @@ By default, **PopFun** performs the following steps:
     * *Population mode can split chromosomes into multiple sub-regions for finer internal Freebayes region fan-out using either fixed-size FASTA chunks or BAI data-aware regioning.*
     * *After global region generation, per-chromosome region files are produced so each population shard remains chromosome-scoped for concatenation.*
     * *`--caller ensemble` runs both GATK and Freebayes population calling, filters each caller VCF first, then combines only shared REF/ALT calls after reference-aware normalization (`bcftools norm -f`). At each shared site, it retains the higher-QUAL representation and reports raw caller VCFs in the results directory.*
-    * `--save_bams` controls which BAM files are published to `results/aligned`: `none` (default) publishes no BAMs, `merged` publishes only merged BAMs under `results/aligned/merged`, and `all` publishes both individual aligned BAMs under `results/aligned/ind` and merged BAMs under `results/aligned/merged`.
+    * `--save_bams` controls which BAM files are published to `results/aligned`: `none` (default) publishes no BAMs, `merged` publishes only merged BAMs under `results/aligned/merged`, and `all` publishes both individual aligned BAM/BAI pairs under `results/aligned/ind` and merged BAMs under `results/aligned/merged`.
 7. **Error Estimation (Optional)**: If `--error_estimate true` is flagged, the pipeline automatically separates replicate libraries, calls variants on them independently, and calculates genotype discordance rates using a custom Python module. The raw per-library VCFs used in this comparison are also retained in `results/variants/error_estimate_libraries/`.
 8. **Population Genetics (Optional)**: If `--popgen true`, PopFun performs PCA (PC1-PC3) and constructs a phylogenetic tree from the final cohort VCF (regardless of variant caller and calling mode), then adds both panels to MultiQC. If a `pop` column is present in the samplesheet, it is used to color PCA markers and tree nodes.
 9. **Variant Filtering**: Strictly filters VCFs based on Depth (DP), Quality (QUAL), and polymorphism, while recalculating INFO tags (`bcftools +fill-tags`). Outputs distinct `.snps.vcf` and `.indels.vcf` files.
@@ -49,13 +60,23 @@ By default, **PopFun** performs the following steps:
    * *Note: Apptainer is only supported from Nextflow version 22.11.0-edge and later.*
 3. Create a `samplesheet.csv` with your input data.
     * *Note: Rows with the exact same `sample` ID but different `library` IDs will be automatically merged post-alignment.*
-    * *Optional: Add a `pop` column with population/group labels. This is used by the population genetics module to color PCA markers and phylogenetic tree nodes.*
+    * *Optional: Populate the `pop` column with population/group labels. This is used by the population genetics module to color PCA markers and phylogenetic tree nodes.*
+    * *Optional: Populate the `bam` column when running with `--start_at call`. Each row must provide a BAM path in that mode. Rows sharing the same `sample` ID will still be merged before duplicate marking, so both per-library and per-sample BAM inputs are accepted. If a sidecar index (`.bam.bai` or `.bai`) is missing next to an input BAM, PopFun will generate one automatically before merging.*
 
     ```csv
-        sample,library,fq1,fq2,pop
-        FungusA,Lib1,data/A_L1_1.fq.gz,data/A_L1_2.fq.gz,Pop_1
-        FungusA,Lib2,data/A_L2_1.fq.gz,data/A_L2_2.fq.gz,Pop_1
-        FungusB,Lib1,data/B_L1_1.fq.gz,data/B_L1_2.fq.gz,Pop_2
+        sample,library,fq1,fq2,pop,bam
+        FungusA,Lib1,data/A_L1_1.fq.gz,data/A_L1_2.fq.gz,Pop_1,
+        FungusA,Lib2,data/A_L2_1.fq.gz,data/A_L2_2.fq.gz,Pop_1,
+        FungusB,Lib1,data/B_L1_1.fq.gz,data/B_L1_2.fq.gz,Pop_2,
+    ```
+
+    For `--start_at call`, provide BAMs instead of FASTQs:
+
+    ```csv
+        sample,library,fq1,fq2,pop,bam
+        FungusA,Lib1,,,Pop_1,data/A_L1.sorted.bam
+        FungusA,Lib2,,,Pop_1,data/A_L2.sorted.bam
+        FungusB,Lib1,,,Pop_2,data/B_merged.sorted.bam
     ```
 
 4. Run the pipeline:
@@ -104,6 +125,8 @@ PopFun allows you to bypass expensive indexing steps by providing pre-built dire
 * `--caller`: `freebayes` (default), `gatk`, or `ensemble`
 * `--error_estimate_caller`: Caller used for the optional per-library error-estimation branch: `freebayes` or `gatk`. By default this follows `--caller`, except `--caller ensemble` defaults to `freebayes` for error estimation.
 * `--markdup_tool`: `bamsormadup` (default), `gatk`, `sambamba`, or `fastdup`
+* `--start_at`: `qc` (default), `alignment`, or `call`. With `--start_at call`, the samplesheet must include a `bam` column and duplicate marking still runs before variant calling. Input BAMs are auto-indexed when a matching sidecar index is not present.
+* `--stop_at`: Final pipeline stage to execute: `qc`, `alignment`, `call`, `filter`, or `multiqc` (default). Use this to stop after an intermediate stage without running the remaining downstream steps.
 * `--freebayes_mode`: `population` (default) or `individual`
 * `--freebayes_region_splitter`: Region splitting strategy for Freebayes fan-out: `coverage` (default, coverage-balanced chunks derived from alignment depth) or `fai` (fixed-size chunks from the FASTA index).
 * `--freebayes_chunk_size`: Chunk size passed to `fasta_generate_regions.py` for splitting genomic regions in Freebayes population-mode. (Default: `100000`).
@@ -129,19 +152,17 @@ PopFun allows you to bypass expensive indexing steps by providing pre-built dire
 * `--freebayes_args`: Additional arguments passed to Freebayes (Default: `--genotype-qualities --use-best-n-alleles 4`). Keep `--genotype-qualities` enabled so `GQ` fields are emitted for downstream genotype-based filtering. The default `--use-best-n-alleles 4` acts as a conservative runtime guard in low-complexity or ultra-high-coverage regions. In population mode, these arguments are forwarded to each chromosome-level Freebayes region fan-out task. Additional upstream tuning options are documented in the [Freebayes performance tuning guide](https://github.com/freebayes/freebayes?tab=readme-ov-file#performance-tuning).
 * Caller parallelism inside `FREEBAYES`, `FREEBAYES_POPULATION`, `FREEBAYES_CALL_LIB`, and `GATK_HAPLOTYPECALLER` now uses the full `task.cpus` allocation for each process.
 
+**Variant Calling Notes:**
+
+* `--freebayes_region_splitter coverage` vendors the upstream Freebayes `coverage_to_regions.py` helper in `bin/`. The default `mosdepth` backend uses `quay.io/biocontainers/mosdepth:0.3.14--h05c3d44_0` with a small adapter that converts mosdepth interval output into the coverage stream expected by the vendored Freebayes helper. The `sambamba` backend uses `quay.io/biocontainers/sambamba:1.0.1--h6f6fda4_1` to generate coverage directly.
+* Chunk-size tuning depends on how regions are generated. With `--freebayes_region_splitter coverage`, lower `--freebayes_coverage_regions` values produce coarser fan-out and higher values produce finer fan-out. With `--freebayes_region_splitter fai`, appropriate `--freebayes_chunk_size` values depend more on genome size and continuity; highly fragmented assemblies with thousands of contigs often work better with `coverage` splitting than with `fai` splitting.
+* If Freebayes region generation exceeds `--freebayes_max_chunks` (default: 2000) in the largest per-chromosome region file, PopFun aborts before fan-out and asks you to lower `--freebayes_coverage_regions` or increase `--freebayes_chunk_size`, depending on the selected splitter.
+* When `--freebayes_debug true` is enabled, each Freebayes task writes `.freebayes_diagnostics` debug files containing a `region_runtime.tsv` timing table and a `slowest_regions.tsv` summary of the longest-running regions. These tables include an absolute chunk `vcf_path` for each chunk. These files are skipped by default.
+* `--caller ensemble` currently requires `--freebayes_mode population`. When `--error_estimate true` is also enabled, the error-estimation branch defaults to `--error_estimate_caller freebayes`; override this with `--error_estimate_caller gatk` if you want GATK-based per-library error estimation instead.
+
 **VCF Filtering:**
 
 Note: Genotype-based filtering relies on valid `GQ` fields. By default, PopFun enables Freebayes `--genotype-qualities` (via `--freebayes_args`) so genotype qualities are emitted and filtering behaves as expected.
-
-Note: `--freebayes_region_splitter coverage` vendors the upstream Freebayes `coverage_to_regions.py` helper in `bin/`. The default `mosdepth` backend uses `quay.io/biocontainers/mosdepth:0.3.14--h05c3d44_0` with a small adapter that converts mosdepth interval output into the coverage stream expected by the vendored Freebayes helper. The `sambamba` backend uses `quay.io/biocontainers/sambamba:1.0.1--h6f6fda4_1` to generate coverage directly.
-
-Note: Chunk-size tuning depends on how regions are generated. With `--freebayes_region_splitter coverage`, lower `--freebayes_coverage_regions` values produce coarser fan-out and higher values produce finer fan-out. With `--freebayes_region_splitter fai`, appropriate `--freebayes_chunk_size` values depend more on genome size and continuity; highly fragmented assemblies with thousands of contigs often work better with `coverage` splitting than with `fai` splitting.
-
-Note: If Freebayes region generation exceeds `--freebayes_max_chunks` (default: 2000) in the largest per-chromosome region file, PopFun aborts before fan-out and asks you to lower `--freebayes_coverage_regions` or increase `--freebayes_chunk_size`, depending on the selected splitter.
-
-Note: When `--freebayes_debug true` is enabled, each Freebayes task writes `.freebayes_diagnostics` debug files containing a `region_runtime.tsv` timing table and a `slowest_regions.tsv` summary of the longest-running regions. These tables include an absolute chunk `vcf_path` for each chunk. These files are skipped by default.
-
-Note: `--caller ensemble` currently requires `--freebayes_mode population`. When `--error_estimate true` is also enabled, the error-estimation branch defaults to `--error_estimate_caller freebayes`; override this with `--error_estimate_caller gatk` if you want GATK-based per-library error estimation instead.
 
 * `--filter_qual`: Minimum QUAL score (Default: `30`)
 * `--filter_min_dp`: Minimum Depth (Default: `10`)
@@ -155,7 +176,7 @@ Upon completion, the `--outdir` will contain the following structured directorie
 ```text
     results/
     ├── aligned/              # Optional BAM outputs when `--save_bams` is enabled
-    │   ├── ind/              # Individual aligned BAMs when `--save_bams all`
+    │   ├── ind/              # Individual aligned BAM/BAI pairs when `--save_bams all`
     │   └── merged/           # Merged BAMs when `--save_bams merged` or `all`
     ├── error_estimates/      # CSV reports of replicate discordance rates
     ├── multiqc/              # Aggregated HTML QC report

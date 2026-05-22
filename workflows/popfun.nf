@@ -3,7 +3,7 @@ include { BWA_ALIGN; BOWTIE2_ALIGN; SAMTOOLS_SORT_ALIGN } from '../modules/local
 include { DECOMPRESS_FASTA; SAMTOOLS_FAIDX; GATK_DICTIONARY; BWA_INDEX; BOWTIE2_INDEX } from '../modules/local/reference_prep'
 include { GFF_TO_BED } from '../modules/local/annotation_prep'
 include { FREEBAYES_SPLIT_REGIONS; FREEBAYES_COVERAGE_SAMBAMBA; FREEBAYES_COVERAGE_MOSDEPTH; FREEBAYES_SPLIT_REGIONS_COVERAGE; FREEBAYES_SPLIT_REGIONS_MOSDEPTH } from '../modules/local/genome_regions'
-include { SAMTOOLS_MERGE; MARK_DUPLICATES; MARK_DUPLICATES_BAMSORMADUP; MARK_DUPLICATES_SAMBAMBA; MARK_DUPLICATES_FASTDUP; QUALIMAP } from '../modules/local/bam_tools'
+include { SAMTOOLS_MERGE; SAMTOOLS_INDEX_INPUT_BAM; MARK_DUPLICATES; MARK_DUPLICATES_BAMSORMADUP; MARK_DUPLICATES_SAMBAMBA; MARK_DUPLICATES_FASTDUP; QUALIMAP } from '../modules/local/bam_tools'
 include { FREEBAYES_POPULATION; FREEBAYES; GATK_HAPLOTYPECALLER; GATK_COMBINEGVCFS; GATK_GENOTYPEGVCFS } from '../modules/local/variant_callers'
 include { BCFTOOLS_MERGE; BCFTOOLS_CONCAT; VCF_ENSEMBLE_COMBINE; VCF_ENSEMBLE_NORMALIZE; VCF_ENSEMBLE_MATCH_RTG; VCF_ENSEMBLE_ASSEMBLE } from '../modules/local/vcf_tools'
 include { GENERATE_SOFTWARE_VERSIONS_MQC; MULTIQC } from '../modules/local/multiqc'
@@ -16,7 +16,7 @@ workflow POPFUN {
     ch_multiqc_reports = Channel.empty()
 
     def step_order = [qc: 1, alignment: 2, call: 3, filter: 4, multiqc: 5]
-    def valid_start_steps = ['qc', 'alignment']
+    def valid_start_steps = ['qc', 'alignment', 'call']
     def valid_stop_steps = ['qc', 'alignment', 'call', 'filter', 'multiqc']
     def valid_markdup_tools = ['gatk', 'bamsormadup', 'sambamba', 'fastdup']
     def valid_callers = ['freebayes', 'gatk', 'ensemble']
@@ -38,8 +38,8 @@ workflow POPFUN {
     def configuredErrorEstimateCaller = params.error_estimate_caller == null ? '' : params.error_estimate_caller.toString().trim()
     def effectiveErrorEstimateCaller = configuredErrorEstimateCaller ?: (params.caller == 'ensemble' ? 'freebayes' : params.caller)
 
-    if (!valid_start_steps.contains(params.start_step)) {
-        error "Invalid --start_step '${params.start_step}'. Supported values: ${valid_start_steps.join(', ')}"
+    if (!valid_start_steps.contains(params.start_at)) {
+        error "Invalid --start_at '${params.start_at}'. Supported values: ${valid_start_steps.join(', ')}"
     }
     if (!valid_stop_steps.contains(params.stop_at)) {
         error "Invalid --stop_at '${params.stop_at}'. Supported values: ${valid_stop_steps.join(', ')}"
@@ -77,8 +77,8 @@ workflow POPFUN {
     if (freebayesMaxChunks < 1) {
         error "Invalid --freebayes_max_chunks '${params.freebayes_max_chunks}'. Value must be >= 1"
     }
-    if (step_order[params.start_step] > step_order[params.stop_at]) {
-        error "Invalid step window: --start_step '${params.start_step}' occurs after --stop_at '${params.stop_at}'"
+    if (step_order[params.start_at] > step_order[params.stop_at]) {
+        error "Invalid step window: --start_at '${params.start_at}' occurs after --stop_at '${params.stop_at}'"
     }
 
     def validateFreebayesRegionFiles = { regionFilesChannel ->
@@ -113,31 +113,46 @@ workflow POPFUN {
     
     // 1. INPUT PARSING
     def samplesheetFile = file(params.input)
+    def isRemotePath = { value ->
+        def text = value == null ? '' : value.toString().trim()
+        return text ==~ /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\/.*/
+    }
+    def stripQueryAndFragment = { value ->
+        def text = value == null ? '' : value.toString().trim()
+        return text.replaceFirst(/[?#].*$/, '')
+    }
+    def safeExists = { candidate ->
+        return candidate != null && !(candidate instanceof Collection) && candidate.exists()
+    }
     def resolveSamplesheetPath = { rawPath ->
         def pathText = rawPath == null ? '' : rawPath.toString().trim()
         if (!pathText) {
             return file(pathText)
         }
 
-        def directPath = file(pathText)
-        if (directPath.exists()) {
+        if (isRemotePath(pathText)) {
+            return pathText
+        }
+
+        def directPath = file(pathText, checkIfExists: false)
+        if (safeExists(directPath)) {
             return directPath
         }
 
-        def samplesheetRelativePath = samplesheetFile.parent ? file("${samplesheetFile.parent}/${pathText}") : null
-        if (samplesheetRelativePath?.exists()) {
+        def samplesheetRelativePath = samplesheetFile.parent ? file("${samplesheetFile.parent}/${pathText}", checkIfExists: false) : null
+        if (safeExists(samplesheetRelativePath)) {
             return samplesheetRelativePath
         }
 
-        def projectRelativePath = file("${projectDir}/${pathText}")
-        if (projectRelativePath.exists()) {
+        def projectRelativePath = file("${projectDir}/${pathText}", checkIfExists: false)
+        if (safeExists(projectRelativePath)) {
             return projectRelativePath
         }
 
-        return samplesheetRelativePath ?: projectRelativePath
+        return samplesheetRelativePath ?: projectRelativePath ?: directPath
     }
 
-    ch_input = Channel.fromPath(samplesheetFile).splitCsv(header:true).map { row ->
+    ch_samples = Channel.fromPath(samplesheetFile).splitCsv(header:true).map { row ->
         def norm = row.collectEntries { key, value ->
             def normKey = key == null ? null : key.toString().trim().toLowerCase()
             def normValue = value == null ? '' : value.toString().trim()
@@ -148,6 +163,7 @@ workflow POPFUN {
         def libraryId = norm.library
         def fq1 = norm.fq1
         def fq2 = norm.fq2
+        def bam = norm.bam
         def rowPreview = row.collect { key, value -> "${key}=${value}" }.join(', ')
 
         if (!sampleId) {
@@ -156,27 +172,51 @@ workflow POPFUN {
         if (!libraryId) {
             error "Samplesheet row is missing required 'library' value: ${rowPreview}"
         }
-        if (!fq1 || !fq2) {
+        if (params.start_at == 'call') {
+            if (!bam) {
+                error "Samplesheet row is missing required 'bam' value for --start_at call: ${rowPreview}"
+            }
+        } else if (!fq1 || !fq2) {
             error "Samplesheet row is missing required 'fq1'/'fq2' value: ${rowPreview}"
         }
 
-        def meta = [ id: sampleId, library: libraryId, unit_id: libraryId, pop: (norm.pop ?: 'NA'), single_end: false ]
-        tuple(meta, resolveSamplesheetPath(fq1), resolveSamplesheetPath(fq2))
-    }
+        def meta = [ id: sampleId, library: libraryId, unit_id: "${sampleId}_${libraryId}", pop: (norm.pop ?: 'NA'), single_end: false ]
+        if (params.start_at == 'call') {
+            def bamPath = resolveSamplesheetPath(bam)
+            def bamPathText = bamPath.toString()
+            def hasBai = false
+            if (!isRemotePath(bamPathText)) {
+                def bamBaiPath = file("${bamPathText}.bai", checkIfExists: false)
+                def shortBaiPath = bamPathText.toLowerCase().endsWith('.bam') ? file(bamPathText.replaceFirst(/(?i)\\.bam$/, '.bai'), checkIfExists: false) : null
+                hasBai = safeExists(bamBaiPath) || safeExists(shortBaiPath)
+            }
+            tuple(meta + [has_bai: hasBai], bamPath)
+        } else {
+            def fq1Path = resolveSamplesheetPath(fq1)
+            def fq2Path = resolveSamplesheetPath(fq2)
+            tuple(meta, fq1Path, fq2Path)
+        }
+    };
+
+    ch_input = ch_samples
+
     ch_samplesheet = Channel.value(samplesheetFile)
     
-    def ref_file = file(params.ref)
-    def ref_is_gz = ref_file.name.toLowerCase().endsWith('.gz')
+    def ref_file = resolveSamplesheetPath(params.ref)
+    def ref_file_name = stripQueryAndFragment(ref_file.toString()).tokenize('/').last()
+    def ref_is_gz = ref_file_name.toLowerCase().endsWith('.gz')
+    def ref_is_remote = isRemotePath(params.ref)
     def ch_ref
     def ref_prefix
+    ch_ref_file = Channel.value(ref_file)
 
     if (ref_is_gz) {
-        DECOMPRESS_FASTA(ref_file)
+        DECOMPRESS_FASTA(ch_ref_file)
         ch_ref = DECOMPRESS_FASTA.out.fasta
         ref_prefix = 'reference.decompressed.fa'
     } else {
-        ch_ref = Channel.value(ref_file)
-        ref_prefix = ref_file.name
+        ch_ref = ch_ref_file
+        ref_prefix = ref_file_name
     }
     
     // Stage MultiQC config and logo together so the relative logo path in the YAML resolves
@@ -188,7 +228,7 @@ workflow POPFUN {
     ch_freebayes_mosdepth_coverage_script = Channel.value(file("$projectDir/bin/mosdepth_intervals_to_coverage.py"))
 
     // --- STEP 1: QC ---
-    if (params.start_step == 'qc') {
+    if (params.start_at == 'qc') {
         if (params.trimmer == 'fastp') {
             FASTP(ch_input)
             ch_reads = FASTP.out.trimmed_reads
@@ -202,7 +242,7 @@ workflow POPFUN {
             ch_reads = TRIMMOMATIC.out.trimmed_reads
             ch_multiqc_reports = ch_multiqc_reports.mix(TRIMMOMATIC.out.log)
         } else { ch_reads = ch_input }
-    } else {
+    } else if (params.start_at == 'alignment') {
         ch_reads = ch_input
     }
 
@@ -217,34 +257,51 @@ workflow POPFUN {
         ch_ref_dict = GATK_DICTIONARY.out.dict
     } else {
         def fai_path = "${params.ref}.fai"
-        if (file(fai_path).exists()) { ch_ref_fai = Channel.value(file(fai_path)) }
+        if (!ref_is_remote && file(fai_path, checkIfExists: false).exists()) { ch_ref_fai = Channel.value(file(fai_path)) }
         else { SAMTOOLS_FAIDX(ch_ref); ch_ref_fai = SAMTOOLS_FAIDX.out.fai }
 
-        def dict_path = "${params.ref.replaceAll(/(?i)\.(fa|fasta)(\.gz)?$/, '')}.dict"
-        if (file(dict_path).exists()) { ch_ref_dict = Channel.value(file(dict_path)) }
+        def ref_no_query = stripQueryAndFragment(params.ref)
+        def dict_path = "${ref_no_query.replaceAll(/(?i)\.(fa|fasta)(\.gz)?$/, '')}.dict"
+        if (!ref_is_remote && file(dict_path, checkIfExists: false).exists()) { ch_ref_dict = Channel.value(file(dict_path)) }
         else { GATK_DICTIONARY(ch_ref); ch_ref_dict = GATK_DICTIONARY.out.dict }
     }
 
-    if (params.aligner == 'bwa-mem2') {
-        if (params.bwa_index && file(params.bwa_index).exists()) { ch_align_index = Channel.value(file(params.bwa_index)) } 
-        else { BWA_INDEX(ch_ref); ch_align_index = BWA_INDEX.out.index }
-    } else {
-        if (params.bowtie2_index && file(params.bowtie2_index).exists()) { ch_align_index = Channel.value(file(params.bowtie2_index)) } 
-        else { BOWTIE2_INDEX(ch_ref); ch_align_index = BOWTIE2_INDEX.out.index }
+    if (params.start_at != 'call') {
+        if (params.aligner == 'bwa-mem2') {
+            if (params.bwa_index && file(params.bwa_index).exists()) { ch_align_index = Channel.value(file(params.bwa_index)) }
+            else { BWA_INDEX(ch_ref); ch_align_index = BWA_INDEX.out.index }
+        } else {
+            if (params.bowtie2_index && file(params.bowtie2_index).exists()) { ch_align_index = Channel.value(file(params.bowtie2_index)) }
+            else { BOWTIE2_INDEX(ch_ref); ch_align_index = BOWTIE2_INDEX.out.index }
+        }
     }
 
     // 3. PREPARE ANNOTATION (For Qualimap)
     if (params.annotation) {
-        if (params.annotation.endsWith('.gff') || params.annotation.endsWith('.gff3')) {
-            GFF_TO_BED(file(params.annotation))
+        def annotationPath = resolveSamplesheetPath(params.annotation)
+        ch_annotation_path = Channel.value(annotationPath)
+        def annotationName = stripQueryAndFragment(params.annotation).toLowerCase()
+        if (annotationName.endsWith('.gff') || annotationName.endsWith('.gff3')) {
+            GFF_TO_BED(ch_annotation_path)
             ch_annot_bed = GFF_TO_BED.out.bed
-        } else if (params.annotation.endsWith('.bed')) {
-            ch_annot_bed = Channel.value(file(params.annotation, checkIfExists: true))
+        } else if (annotationName.endsWith('.bed')) {
+            ch_annot_bed = ch_annotation_path
         } else { error "Annotation file must be .gff, .gff3, or .bed format" }
     } else { ch_annot_bed = Channel.value(file("$projectDir/assets/NO_FILE")) }
 
     // --- STEP 2: ALIGNMENT ---
-    if (params.aligner == 'bwa-mem2') {
+    if (params.start_at == 'call') {
+        ch_bams_with_existing_index = ch_input
+            .filter { meta, bam -> meta.has_bai }
+            .map { meta, bam -> tuple(meta.findAll { k, v -> k != 'has_bai' }, bam) }
+
+        ch_bams_missing_index = ch_input
+            .filter { meta, bam -> !meta.has_bai }
+            .map { meta, bam -> tuple(meta.findAll { k, v -> k != 'has_bai' }, bam) }
+
+        SAMTOOLS_INDEX_INPUT_BAM(ch_bams_missing_index)
+        ch_bams = ch_bams_with_existing_index.mix(SAMTOOLS_INDEX_INPUT_BAM.out.bam)
+    } else if (params.aligner == 'bwa-mem2') {
         BWA_ALIGN(ch_reads, ch_align_index, ref_prefix)
         SAMTOOLS_SORT_ALIGN(BWA_ALIGN.out.sam)
         ch_bams = SAMTOOLS_SORT_ALIGN.out.bam 
