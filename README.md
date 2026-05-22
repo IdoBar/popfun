@@ -43,10 +43,10 @@ By default, **PopFun** performs the following steps:
     * Marks optical/PCR duplicates (`bamsormadup` by default, with optional `GATK MarkDuplicates`, `sambamba`, or `FastDup`).
 5. **Alignment QC**: `Qualimap` (Supports optional `.gff`/`.bed` annotations for targeted region metrics).
 6. **Variant Calling**: `Freebayes` (Population mode default), `GATK HaplotypeCaller`, or an `ensemble` intersection of both callers.
-    * *Supports Freebayes population-level calling, or individual sample calling + merging.*
-    * *Population mode can split chromosomes into multiple sub-regions for finer internal Freebayes region fan-out using either fixed-size FASTA chunks or BAI data-aware regioning.*
-    * *After global region generation, per-chromosome region files are produced so each population shard remains chromosome-scoped for concatenation.*
-    * *`--caller ensemble` runs both GATK and Freebayes population calling, filters each caller VCF first, then combines only shared REF/ALT calls after reference-aware normalization (`bcftools norm -f`). At each shared site, it retains the higher-QUAL representation and reports raw caller VCFs in the results directory.*
+    * Supports Freebayes population-level calling, or individual sample calling + merging.
+    * Population mode can split chromosomes into multiple sub-regions for finer internal Freebayes region fan-out using either fixed-size FASTA chunks or BAI data-aware regioning.
+    * After global region generation, per-chromosome region files are produced so each population shard remains chromosome-scoped for concatenation.
+    * `--caller ensemble` runs both GATK and Freebayes population calling, filters each caller VCF first, then combines only shared REF/ALT calls after reference-aware normalization (`bcftools norm -f`). At each shared site, it retains the higher-QUAL representation and reports raw caller VCFs in the results directory.
     * `--save_bams` controls which BAM files are published to `results/aligned`: `none` (default) publishes no BAMs, `merged` publishes only merged BAMs under `results/aligned/merged`, and `all` publishes both individual aligned BAM/BAI pairs under `results/aligned/ind` and merged BAMs under `results/aligned/merged`.
 7. **Error Estimation (Optional)**: If `--error_estimate true` is flagged, the pipeline automatically separates replicate libraries, calls variants on them independently, and calculates genotype discordance rates using a custom Python module. The raw per-library VCFs used in this comparison are also retained in `results/variants/error_estimate_libraries/`.
 8. **Population Genetics (Optional)**: If `--popgen true`, PopFun performs PCA (PC1-PC3) and constructs a phylogenetic tree from the final cohort VCF (regardless of variant caller and calling mode), then adds both panels to MultiQC. If a `pop` column is present in the samplesheet, it is used to color PCA markers and tree nodes.
@@ -57,11 +57,11 @@ By default, **PopFun** performs the following steps:
 
 1. Install [Nextflow](https://www.nextflow.io/docs/latest/getstarted.html#installation) (>=22.10.1).
 2. Install [Conda](https://docs.conda.io/en/latest/), [Docker](https://docs.docker.com/engine/installation/), or [Singularity/Apptainer](https://sylabs.io/guides/3.0/user-guide/).
-   * *Note: Apptainer is only supported from Nextflow version 22.11.0-edge and later.*
+    * Note: Apptainer is only supported from Nextflow version 22.11.0-edge and later.
 3. Create a `samplesheet.csv` with your input data.
-    * *Note: Rows with the exact same `sample` ID but different `library` IDs will be automatically merged post-alignment.*
-    * *Optional: Populate the `pop` column with population/group labels. This is used by the population genetics module to color PCA markers and phylogenetic tree nodes.*
-    * *Optional: Populate the `bam` column when running with `--start_at call`. Each row must provide a BAM path in that mode. Rows sharing the same `sample` ID will still be merged before duplicate marking, so both per-library and per-sample BAM inputs are accepted. If a sidecar index (`.bam.bai` or `.bai`) is missing next to an input BAM, PopFun will generate one automatically before merging.*
+     * Note: Rows with the exact same `sample` ID but different `library` IDs will be automatically merged post-alignment.
+     * Optional: Populate the `pop` column with population/group labels. This is used by the population genetics module to color PCA markers and phylogenetic tree nodes.
+     * Optional: Populate the `bam` column when running with `--start_at call`. Each row must provide a BAM path in that mode. Rows sharing the same `sample` ID will still be merged before duplicate marking, so both per-library and per-sample BAM inputs are accepted. If a sidecar index (`.bam.bai` or `.bai`) is missing next to an input BAM, PopFun will generate one automatically before merging.
 
     ```csv
         sample,library,fq1,fq2,pop,bam
@@ -219,6 +219,7 @@ PopFun utilizes the following open-source tools via [Bioconda](https://bioconda.
 * [Mosdepth](https://github.com/brentp/mosdepth) [0.3.14]
 * [FastDup](https://github.com/zzhofict/FastDup) [1.0.0]
 * [Freebayes](https://github.com/freebayes/freebayes) [1.3.10]
+* [RTG Tools](https://github.com/RealTimeGenomics/rtg-tools) [3.13] (`vcfeval` for optional ensemble matching)
 * [BEDOPS](https://bedops.readthedocs.io/en/latest/) [2.4.42] (gff2bed)
 * [Qualimap](http://qualimap.conesalab.org/) [2.3]
 * [MultiQC](https://multiqc.info/) [1.33]

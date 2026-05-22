@@ -62,6 +62,10 @@ Please cite the workflow framework and relevant software used in your analysis.
 
 > Garrison, E., & Marth, G. (2012). Haplotype-based variant detection from short-read sequencing. arXiv:1207.3907.
 
+### [RTG Tools / vcfeval](https://github.com/RealTimeGenomics/rtg-tools)
+
+> Cleary, J. G., Braithwaite, R., Gaastra, K., Hilbush, B. S., Inglis, S., Irvine, S. A., Jackson, A., Littin, R., Rathod, M., Ware, D., Zook, J. M., Trigg, L., & De La Vega, F. M. (2015). Comparing Variant Call Files for Performance Benchmarking of Next-Generation Sequencing Variant Calling Pipelines. bioRxiv. doi:10.1101/023754.
+
 ### [BEDOPS](https://bedops.readthedocs.io/en/latest/)
 
 > Neph, S., Kuehn, M. S., Reynolds, A. P., Haugen, E., Thurman, R. E., Johnson, A. K., ... Stamatoyannopoulos, J. A. (2012). BEDOPS: High-performance genomic feature operations. Bioinformatics, 28(14), 1919-1920. doi:10.1093/bioinformatics/bts277
