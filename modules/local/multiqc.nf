@@ -33,7 +33,7 @@ freebayes: "1.3.10"
 rtg_tools: "3.13"
 bedops: "2.4.42"
 qualimap: "2.3"
-multiqc: "1.33"
+multiqc: "1.35"
 iqtree: "2.4.0"
 mrbayes: "3.2.7"
 YAML
@@ -42,8 +42,8 @@ YAML
 
 process MULTIQC {
     label 'sc_small'
-    conda "bioconda::multiqc=1.33"
-    container 'quay.io/biocontainers/multiqc:1.33--pyhdfd78af_0'
+    conda "bioconda::multiqc=1.35"
+    container 'quay.io/biocontainers/multiqc:1.35--pyhdfd78af_0'
 
     input: 
     // Keep each staged input under a unique subfolder to avoid basename collisions.
