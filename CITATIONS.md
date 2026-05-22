@@ -1,4 +1,4 @@
-# HapFun: Citations
+# PopFun: Citations
 
 Please cite the workflow framework and relevant software used in your analysis.
 
@@ -45,6 +45,10 @@ Please cite the workflow framework and relevant software used in your analysis.
 ### [Sambamba](https://lomereiter.github.io/sambamba/)
 
 > Tarasov, A., Vilella, A. J., Cuppen, E., Nijman, I. J., & Prins, P. (2015). Sambamba: fast processing of NGS alignment formats. Bioinformatics, 31(12), 2032-2034. doi:10.1093/bioinformatics/btv098
+
+### [mosdepth](https://github.com/brentp/mosdepth)
+
+> Pedersen, B. S., & Quinlan, A. R. (2018). Mosdepth: quick coverage calculation for genomes and exomes. Bioinformatics, 34(5), 867-868. doi:10.1093/bioinformatics/btx699
 
 ### [FastDup](https://github.com/zzhofict/FastDup)
 

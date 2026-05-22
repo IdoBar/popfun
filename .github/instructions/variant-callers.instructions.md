@@ -10,7 +10,7 @@ These rules apply when editing [modules/local/variant_callers.nf](../../modules/
 
 ## Contract and Wiring Rules
 
-- Preserve nf-core style tuple/meta contracts expected by [workflows/hapfun.nf](../../workflows/hapfun.nf).
+- Preserve nf-core style tuple/meta contracts expected by [workflows/popfun.nf](../../workflows/popfun.nf).
 - Do not change emit names or output file types unless all downstream consumers are updated in the same change.
 - Keep process-level edits minimal and avoid refactoring unrelated caller processes.
 
@@ -25,7 +25,7 @@ For triple-quoted Groovy script blocks:
 
 ## GLNexus Rules
 
-- Keep GLNexus behavior aligned with the guard in [workflows/hapfun.nf](../../workflows/hapfun.nf) that rejects `--caller freebayes` with `--gvcf_joint_caller glnexus`.
+- Keep GLNexus behavior aligned with the guard in [workflows/popfun.nf](../../workflows/popfun.nf) that rejects `--caller freebayes` with `--gvcf_joint_caller glnexus`.
 - Validate the GLNexus container tag is pullable before updating it.
 - Verify required executables are available in the selected container; do not assume `bgzip` or `bcftools` exist in GLNexus images.
 - Prefer producing BCF directly when container tool availability makes conversion steps fragile.

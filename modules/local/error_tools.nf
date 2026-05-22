@@ -17,9 +17,9 @@ process MARK_DUPLICATES_LIB {
     def unitId = meta.unit_id ?: meta.library ?: meta.id
     """
     gatk MarkDuplicates \\
-        -I $bam \\
-        -O ${unitId}.dedup.bam \\
-        -M ${unitId}.metrics.txt \\
+        -I "$bam" \\
+        -O "${unitId}.dedup.bam" \\
+        -M "${unitId}.metrics.txt" \\
         --CREATE_INDEX true \\
         --READ_NAME_REGEX null
     """
@@ -41,9 +41,9 @@ process MARK_DUPLICATES_LIB_BAMSORMADUP {
     script:
     def unitId = meta.unit_id ?: meta.library ?: meta.id
     """
-    bamcollate2 inputformat=bam outputformat=bam level=1 < $bam | \
-    bamsormadup SO=coordinate inputformat=bam level=1 threads=${task.cpus} M=${unitId}.metrics.txt > ${unitId}.dedup.bam
-    bamindex < ${unitId}.dedup.bam > ${unitId}.dedup.bai
+    bamcollate2 inputformat=bam outputformat=bam level=1 < "$bam" | \
+    bamsormadup SO=coordinate inputformat=bam level=1 threads=${task.cpus} M="${unitId}.metrics.txt" > "${unitId}.dedup.bam"
+    bamindex < "${unitId}.dedup.bam" > "${unitId}.dedup.bai"
     """
 }
 
@@ -63,8 +63,8 @@ process MARK_DUPLICATES_LIB_SAMBAMBA {
     script:
     def unitId = meta.unit_id ?: meta.library ?: meta.id
     """
-    sambamba markdup -t ${task.cpus} $bam ${unitId}.dedup.bam 2> ${unitId}.sambamba_markdup.log
-    sambamba index -t ${task.cpus} ${unitId}.dedup.bam ${unitId}.dedup.bai
+    sambamba markdup -t ${task.cpus} "$bam" "${unitId}.dedup.bam" 2> "${unitId}.sambamba_markdup.log"
+    sambamba index -t ${task.cpus} "${unitId}.dedup.bam" "${unitId}.dedup.bai"
     """
 }
 
@@ -84,8 +84,8 @@ process MARK_DUPLICATES_LIB_FASTDUP {
     script:
     def unitId = meta.unit_id ?: meta.library ?: meta.id
     """
-    fastdup --input $bam --output ${unitId}.dedup.bam --metrics ${unitId}.metrics.txt --num-threads ${task.cpus}
-    samtools index -@ ${task.cpus} ${unitId}.dedup.bam ${unitId}.dedup.bai
+    fastdup --input "$bam" --output "${unitId}.dedup.bam" --metrics "${unitId}.metrics.txt" --num-threads ${task.cpus}
+    samtools index -@ ${task.cpus} "${unitId}.dedup.bam" "${unitId}.dedup.bai"
     """
 }
 
@@ -99,6 +99,7 @@ process GATK_CALL_LIB {
     tuple val(meta), path(bam), path(bai)
     path ref
     path ref_idx 
+    path bai_split_script
     path ref_dict 
 
     output:
@@ -108,9 +109,9 @@ process GATK_CALL_LIB {
     def unitId = meta.unit_id ?: meta.library ?: meta.id
     """
     gatk --java-options "-Xmx${task.memory.toGiga()}g" HaplotypeCaller \\
-        -R $ref \\
-        -I $bam \\
-        -O ${unitId}.vcf.gz \\
+        -R "$ref" \\
+        -I "$bam" \\
+        -O "${unitId}.vcf.gz" \\
         -ploidy ${params.ploidy}
     """
 }
@@ -128,17 +129,92 @@ process FREEBAYES_CALL_LIB {
 
     output:
     tuple val(meta), path("*.vcf.gz"), path("*.vcf.gz.tbi"), emit: vcf
+    path "${meta.unit_id ?: meta.library ?: meta.id}.freebayes_diagnostics/*.tsv", optional: true, emit: diagnostics
 
     script:
     def args = task.ext.args ?: ''
-    def maxInnerThreads = (params.caller_inner_threads ?: 4) as Integer
-    def threads = Math.max(1, Math.min((task.cpus ?: 1) as Integer, maxInnerThreads))
+    def threads = Math.max(1, (task.cpus ?: 1) as Integer)
     def unitId = meta.unit_id ?: meta.library ?: meta.id
+    def diagnosticsDir = "${unitId}.freebayes_diagnostics"
+    def debugEnabled = params.freebayes_debug ? 'true' : 'false'
     """
-    awk '{ print \$1 ":1-" \$2 }' $ref_idx > chromosome_regions.txt
+    set -euo pipefail
 
-    freebayes-parallel chromosome_regions.txt ${threads} -f $ref -p ${params.ploidy} $args $bam | bgzip -c > ${unitId}.vcf.gz
+    awk '{ print \$1 ":1-" \$2 }' "$ref_idx" > chromosome_regions.txt
+
+    [ -s chromosome_regions.txt ] || { echo 'No Freebayes regions generated' >&2; exit 1; }
+
+    mkdir -p chunks
+    if [ "${debugEnabled}" = 'true' ]; then
+        mkdir -p ${diagnosticsDir}/metrics
+    fi
+    export NF_REF="$ref"
+    export NF_PLOIDY="${params.ploidy}"
+    export NF_ARGS="${args}"
+    export NF_BAM="$bam"
+    export NF_DIAG_DIR="${diagnosticsDir}"
+    export NF_DEBUG="${debugEnabled}"
+
+    set +e
+    awk 'NF { printf "%s chunks/%08d.vcf\\n", \$0, NR }' chromosome_regions.txt \
+        | xargs -r -n 2 -P ${threads} sh -c '
+            region="\$1"
+            chunk_vcf="\$2"
+            chunk_id=\$(basename "\${chunk_vcf%.vcf}")
+            work_dir=\$(pwd)
+            chunk_vcf_path="\${work_dir}/\${chunk_vcf}"
+            if [ "\$NF_DEBUG" = "true" ]; then
+                metric_file="\$NF_DIAG_DIR/metrics/\${chunk_id}.tsv"
+            else
+                metric_file=''
+            fi
+            start_epoch=\$(date +%s)
+            freebayes -f "\$NF_REF" -p "\$NF_PLOIDY" \$NF_ARGS "\$NF_BAM" --region "\$region" > "\$chunk_vcf" 2> /dev/null
+            status=\$?
+            end_epoch=\$(date +%s)
+            duration_seconds=\$((end_epoch - start_epoch))
+            if [ "\$NF_DEBUG" = "true" ]; then
+                printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\n" \
+                    "\$chunk_id" "\$region" "\$status" "\$start_epoch" "\$end_epoch" "\$duration_seconds" "\$chunk_vcf_path" > "\$metric_file"
+            fi
+            exit "\$status"
+        ' sh
+    xargs_status=\$?
+    set -e
+
+    if [ "${debugEnabled}" = 'true' ]; then
+        find ${diagnosticsDir}/metrics -type f -name '*.tsv' | LC_ALL=C sort > metric_files.list
+        [ -s metric_files.list ] || { echo 'No Freebayes diagnostic metrics were produced' >&2; exit 1; }
+
+        printf 'chunk_id\tregion\texit_status\tstart_epoch\tend_epoch\tduration_seconds\tvcf_path\n' > ${diagnosticsDir}/${unitId}.freebayes_diagnostics_region_runtime.tsv
+        xargs cat < metric_files.list >> ${diagnosticsDir}/${unitId}.freebayes_diagnostics_region_runtime.tsv
+
+        printf 'chunk_id\tregion\texit_status\tstart_epoch\tend_epoch\tduration_seconds\tvcf_path\n' > ${diagnosticsDir}/${unitId}.freebayes_diagnostics_slowest_regions.tsv
+        tail -n +2 ${diagnosticsDir}/${unitId}.freebayes_diagnostics_region_runtime.tsv | LC_ALL=C sort -t \$'\t' -k6,6nr | awk 'NR <= 10' >> ${diagnosticsDir}/${unitId}.freebayes_diagnostics_slowest_regions.tsv
+    fi
+
+    if [ "\$xargs_status" -ne 0 ]; then
+        echo 'One or more Freebayes chunk calls failed; see freebayes diagnostics for details' >&2
+        exit "\$xargs_status"
+    fi
+
+    find chunks -type f -name '*.vcf' | LC_ALL=C sort > chunk_vcfs.list
+    [ -s chunk_vcfs.list ] || { echo 'No Freebayes chunk outputs were produced' >&2; exit 1; }
+
+    set +e
+    set +o pipefail
+    xargs cat < chunk_vcfs.list | vcffirstheader | vcfstreamsort -w 1000 | vcfuniq > merged.vcf
+    merge_status=\$?
+    set -o pipefail
+    set -e
+    if [ "\$merge_status" -ne 0 ]; then
+        exit "\$merge_status"
+    fi
+
+    bgzip -c merged.vcf > ${unitId}.vcf.gz
     tabix -p vcf ${unitId}.vcf.gz
+    rm -f merged.vcf chunk_vcfs.list
+    rm -rf chunks
     """
 }
 
@@ -158,10 +234,10 @@ process VCF_MULTI_COMPARE {
     script:
     def vcf_args = vcfs.collect { "'${it}'" }.join(' ')
     """
-    python $compare_script \\
+    python "$compare_script" \\
         --vcfs ${vcf_args} \\
-        --sample ${meta.id} \\
-        --out ${meta.id}_${compare_label}_discordance.csv
+        --sample "${meta.id}" \\
+        --out "${meta.id}_${compare_label}_discordance.csv"
     """
 }
 
@@ -174,8 +250,8 @@ process VCF_DISCORDANCE_MQC {
     path discordance_csvs
 
     output:
-    path "hapfun_discordance_rate_mqc.csv", emit: mqc_rate_csv
-    path "hapfun_discordance_metrics_mqc.csv", emit: mqc_metrics_csv
+    path "popfun_discordance_rate_mqc.csv", emit: mqc_rate_csv
+    path "popfun_discordance_metrics_mqc.csv", emit: mqc_metrics_csv
 
     script:
     """
@@ -212,12 +288,12 @@ for sample_id in sample_values:
     sample_values[sample_id].setdefault('raw', {col: 0.0 for col in metric_cols})
     sample_values[sample_id].setdefault('filtered', {col: 0.0 for col in metric_cols})
 
-rate_header = '''# id: 'hapfun_discordance_rate'
+rate_header = '''# id: 'popfun_discordance_rate'
 # section_name: 'Library Discordance Before vs After Filtering'
 # description: 'Mean pairwise genotype discordance rate per sample, comparing raw and filtered variant calls.'
 # plot_type: 'bargraph'
 # pconfig:
-#   id: 'hapfun_discordance_rate_plot'
+#   id: 'popfun_discordance_rate_plot'
 #   title: 'Discordance Before vs After Filtering'
 #   ylab: 'Discordance rate'
 #   xlab: 'Sample'
@@ -229,12 +305,12 @@ for sample_id, vals in sorted(sample_values.items()):
         f"{sample_id},{round(vals['raw']['discordance_rate'], 6)},{round(vals['filtered']['discordance_rate'], 6)}"
     )
 
-metrics_header = '''# id: 'hapfun_discordance_metrics'
+metrics_header = '''# id: 'popfun_discordance_metrics'
 # section_name: 'Library Discordance Metrics (Raw vs Filtered)'
 # description: 'Mean pairwise shared sites, concordant sites, discordant sites, and discordance rate per sample for raw and filtered calls.'
 # plot_type: 'table'
 # pconfig:
-#   id: 'hapfun_discordance_metrics_table'
+#   id: 'popfun_discordance_metrics_table'
 #   title: 'Library Discordance Metrics (Raw vs Filtered)'
 '''
 
@@ -249,11 +325,11 @@ for sample_id, vals in sorted(sample_values.items()):
     )
 
 nl = chr(10)
-with open('hapfun_discordance_rate_mqc.csv', 'w') as fh:
+with open('popfun_discordance_rate_mqc.csv', 'w') as fh:
     fh.write(rate_header)
     fh.write(nl.join(rate_rows) + nl)
 
-with open('hapfun_discordance_metrics_mqc.csv', 'w') as fh:
+with open('popfun_discordance_metrics_mqc.csv', 'w') as fh:
     fh.write(metrics_header)
     fh.write(nl.join(metrics_rows) + nl)
 PY

@@ -1,0 +1,767 @@
+include { FASTP; FASTQC; TRIMMOMATIC } from '../modules/local/qc_tools'
+include { BWA_ALIGN; BOWTIE2_ALIGN; SAMTOOLS_SORT_ALIGN } from '../modules/local/aligners'
+include { DECOMPRESS_FASTA; SAMTOOLS_FAIDX; GATK_DICTIONARY; BWA_INDEX; BOWTIE2_INDEX } from '../modules/local/reference_prep'
+include { GFF_TO_BED } from '../modules/local/annotation_prep'
+include { FREEBAYES_SPLIT_REGIONS; FREEBAYES_COVERAGE_SAMBAMBA; FREEBAYES_COVERAGE_MOSDEPTH; FREEBAYES_SPLIT_REGIONS_COVERAGE; FREEBAYES_SPLIT_REGIONS_MOSDEPTH } from '../modules/local/genome_regions'
+include { SAMTOOLS_MERGE; SAMTOOLS_INDEX_INPUT_BAM; MARK_DUPLICATES; MARK_DUPLICATES_BAMSORMADUP; MARK_DUPLICATES_SAMBAMBA; MARK_DUPLICATES_FASTDUP; QUALIMAP } from '../modules/local/bam_tools'
+include { FREEBAYES_POPULATION; FREEBAYES; GATK_HAPLOTYPECALLER; GATK_COMBINEGVCFS; GATK_GENOTYPEGVCFS } from '../modules/local/variant_callers'
+include { BCFTOOLS_MERGE; BCFTOOLS_CONCAT; VCF_ENSEMBLE_COMBINE; VCF_ENSEMBLE_NORMALIZE; VCF_ENSEMBLE_MATCH_RTG; VCF_ENSEMBLE_ASSEMBLE } from '../modules/local/vcf_tools'
+include { GENERATE_SOFTWARE_VERSIONS_MQC; MULTIQC } from '../modules/local/multiqc'
+include { POPGEN_ANALYSES } from '../modules/local/popgen'
+include { MARK_DUPLICATES_LIB; MARK_DUPLICATES_LIB_BAMSORMADUP; MARK_DUPLICATES_LIB_SAMBAMBA; MARK_DUPLICATES_LIB_FASTDUP; GATK_CALL_LIB; FREEBAYES_CALL_LIB; VCF_MULTI_COMPARE as VCF_MULTI_COMPARE_RAW; VCF_MULTI_COMPARE as VCF_MULTI_COMPARE_FILTERED; VCF_DISCORDANCE_MQC } from '../modules/local/error_tools'
+include { VCF_FILTER as VCF_FILTER_LIB; VCF_FILTER as VCF_FILTER_FINAL; VCF_FILTER as VCF_FILTER_ENS_GATK; VCF_FILTER as VCF_FILTER_ENS_FB } from '../modules/local/vcf_filter'
+include { BCFTOOLS_STATS as BCFTOOLS_STATS_RAW; BCFTOOLS_STATS as BCFTOOLS_STATS_FILTERED } from '../modules/local/vcf_tools'
+
+workflow POPFUN {
+    ch_multiqc_reports = Channel.empty()
+
+    def step_order = [qc: 1, alignment: 2, call: 3, filter: 4, multiqc: 5]
+    def valid_start_steps = ['qc', 'alignment', 'call']
+    def valid_stop_steps = ['qc', 'alignment', 'call', 'filter', 'multiqc']
+    def valid_markdup_tools = ['gatk', 'bamsormadup', 'sambamba', 'fastdup']
+    def valid_callers = ['freebayes', 'gatk', 'ensemble']
+    def valid_ensemble_matchers = ['bcftools', 'rtg']
+    def valid_error_estimate_callers = ['freebayes', 'gatk']
+    def valid_freebayes_region_splitters = ['fai', 'coverage']
+    def valid_freebayes_coverage_tools = ['sambamba', 'mosdepth']
+    def parseWholeNumberParam = { value, name ->
+        try {
+            def parsed = new BigDecimal(value.toString().trim())
+            return parsed.longValueExact()
+        } catch (NumberFormatException | ArithmeticException ignored) {
+            error "Invalid --${name} '${value}'. Value must be a whole number >= 1"
+        }
+    }
+
+    def freebayesCoverageRegions = parseWholeNumberParam(params.freebayes_coverage_regions, 'freebayes_coverage_regions')
+    def freebayesMaxChunks = parseWholeNumberParam(params.freebayes_max_chunks, 'freebayes_max_chunks')
+    def configuredErrorEstimateCaller = params.error_estimate_caller == null ? '' : params.error_estimate_caller.toString().trim()
+    def effectiveErrorEstimateCaller = configuredErrorEstimateCaller ?: (params.caller == 'ensemble' ? 'freebayes' : params.caller)
+
+    if (!valid_start_steps.contains(params.start_at)) {
+        error "Invalid --start_at '${params.start_at}'. Supported values: ${valid_start_steps.join(', ')}"
+    }
+    if (!valid_stop_steps.contains(params.stop_at)) {
+        error "Invalid --stop_at '${params.stop_at}'. Supported values: ${valid_stop_steps.join(', ')}"
+    }
+    if (!valid_markdup_tools.contains(params.markdup_tool)) {
+        error "Invalid --markdup_tool '${params.markdup_tool}'. Supported values: ${valid_markdup_tools.join(', ')}"
+    }
+    if (!valid_callers.contains(params.caller)) {
+        error "Invalid --caller '${params.caller}'. Supported values: ${valid_callers.join(', ')}"
+    }
+    if (!valid_ensemble_matchers.contains(params.ensemble_matcher)) {
+        error "Invalid --ensemble_matcher '${params.ensemble_matcher}'. Supported values: ${valid_ensemble_matchers.join(', ')}"
+    }
+    if (configuredErrorEstimateCaller && !valid_error_estimate_callers.contains(configuredErrorEstimateCaller)) {
+        error "Invalid --error_estimate_caller '${params.error_estimate_caller}'. Supported values: ${valid_error_estimate_callers.join(', ')}"
+    }
+    if (!valid_freebayes_region_splitters.contains(params.freebayes_region_splitter)) {
+        error "Invalid --freebayes_region_splitter '${params.freebayes_region_splitter}'. Supported values: ${valid_freebayes_region_splitters.join(', ')}"
+    }
+    if (!valid_freebayes_coverage_tools.contains(params.freebayes_coverage_tool)) {
+        error "Invalid --freebayes_coverage_tool '${params.freebayes_coverage_tool}'. Supported values: ${valid_freebayes_coverage_tools.join(', ')}"
+    }
+    if (params.caller == 'ensemble' && params.freebayes_mode != 'population') {
+        error "--caller ensemble currently requires --freebayes_mode population"
+    }
+    if (!valid_error_estimate_callers.contains(effectiveErrorEstimateCaller)) {
+        error "Unable to resolve a valid --error_estimate_caller from --caller '${params.caller}'. Supported values: ${valid_error_estimate_callers.join(', ')}"
+    }
+    if ((params.freebayes_chunk_size as Integer) < 1) {
+        error "Invalid --freebayes_chunk_size '${params.freebayes_chunk_size}'. Value must be >= 1"
+    }
+    if (freebayesCoverageRegions < 1) {
+        error "Invalid --freebayes_coverage_regions '${params.freebayes_coverage_regions}'. Value must be >= 1"
+    }
+    if (freebayesMaxChunks < 1) {
+        error "Invalid --freebayes_max_chunks '${params.freebayes_max_chunks}'. Value must be >= 1"
+    }
+    if (step_order[params.start_at] > step_order[params.stop_at]) {
+        error "Invalid step window: --start_at '${params.start_at}' occurs after --stop_at '${params.stop_at}'"
+    }
+
+    def validateFreebayesRegionFiles = { regionFilesChannel ->
+        regionFilesChannel.map { regionFiles ->
+            def stagedRegionFiles = regionFiles instanceof Collection ? regionFiles : [regionFiles]
+            long maxRegionsInFile = 0L
+            def largestRegionFile = null
+
+            stagedRegionFiles.each { regionFile ->
+                long regionsInFile = 0L
+                regionFile.eachLine { line ->
+                    if (line.toString().trim()) {
+                        regionsInFile++
+                    }
+                }
+
+                if (regionsInFile > maxRegionsInFile) {
+                    maxRegionsInFile = regionsInFile
+                    largestRegionFile = regionFile
+                }
+            }
+
+            if (maxRegionsInFile > freebayesMaxChunks) {
+                def sizeParam = params.freebayes_region_splitter == 'coverage' ? '--freebayes_coverage_regions' : '--freebayes_chunk_size'
+                def regionFileName = largestRegionFile?.getName() ?: 'unknown'
+                error "Freebayes region generation produced ${maxRegionsInFile} target regions in ${regionFileName}, which exceeds --freebayes_max_chunks ${freebayesMaxChunks}. Increase --freebayes_max_chunks or ${sizeParam} or use the recommended default values."
+            }
+
+            regionFiles
+        }
+    }
+    
+    // 1. INPUT PARSING
+    def samplesheetFile = file(params.input)
+    def isRemotePath = { value ->
+        def text = value == null ? '' : value.toString().trim()
+        return text ==~ /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\/.*/
+    }
+    def stripQueryAndFragment = { value ->
+        def text = value == null ? '' : value.toString().trim()
+        return text.replaceFirst(/[?#].*$/, '')
+    }
+    def safeExists = { candidate ->
+        return candidate != null && !(candidate instanceof Collection) && candidate.exists()
+    }
+    def resolveSamplesheetPath = { rawPath ->
+        def pathText = rawPath == null ? '' : rawPath.toString().trim()
+        if (!pathText) {
+            return file(pathText)
+        }
+
+        if (isRemotePath(pathText)) {
+            return pathText
+        }
+
+        def directPath = file(pathText, checkIfExists: false)
+        if (safeExists(directPath)) {
+            return directPath
+        }
+
+        def samplesheetRelativePath = samplesheetFile.parent ? file("${samplesheetFile.parent}/${pathText}", checkIfExists: false) : null
+        if (safeExists(samplesheetRelativePath)) {
+            return samplesheetRelativePath
+        }
+
+        def projectRelativePath = file("${projectDir}/${pathText}", checkIfExists: false)
+        if (safeExists(projectRelativePath)) {
+            return projectRelativePath
+        }
+
+        return samplesheetRelativePath ?: projectRelativePath ?: directPath
+    }
+
+    ch_samples = Channel.fromPath(samplesheetFile).splitCsv(header:true).map { row ->
+        def norm = row.collectEntries { key, value ->
+            def normKey = key == null ? null : key.toString().trim().toLowerCase()
+            def normValue = value == null ? '' : value.toString().trim()
+            [(normKey): normValue]
+        }.findAll { key, value -> key != null }
+
+        def sampleId = norm.sample
+        def libraryId = norm.library
+        def fq1 = norm.fq1
+        def fq2 = norm.fq2
+        def bam = norm.bam
+        def rowPreview = row.collect { key, value -> "${key}=${value}" }.join(', ')
+
+        if (!sampleId) {
+            error "Samplesheet row is missing required 'sample' value: ${rowPreview}"
+        }
+        if (!libraryId) {
+            error "Samplesheet row is missing required 'library' value: ${rowPreview}"
+        }
+        if (params.start_at == 'call') {
+            if (!bam) {
+                error "Samplesheet row is missing required 'bam' value for --start_at call: ${rowPreview}"
+            }
+        } else if (!fq1 || !fq2) {
+            error "Samplesheet row is missing required 'fq1'/'fq2' value: ${rowPreview}"
+        }
+
+        def meta = [ id: sampleId, library: libraryId, unit_id: "${sampleId}_${libraryId}", pop: (norm.pop ?: 'NA'), single_end: false ]
+        if (params.start_at == 'call') {
+            def bamPath = resolveSamplesheetPath(bam)
+            def bamPathText = bamPath.toString()
+            def hasBai = false
+            if (!isRemotePath(bamPathText)) {
+                def bamBaiPath = file("${bamPathText}.bai", checkIfExists: false)
+                def shortBaiPath = bamPathText.toLowerCase().endsWith('.bam') ? file(bamPathText.replaceFirst(/(?i)\\.bam$/, '.bai'), checkIfExists: false) : null
+                hasBai = safeExists(bamBaiPath) || safeExists(shortBaiPath)
+            }
+            tuple(meta + [has_bai: hasBai], bamPath)
+        } else {
+            def fq1Path = resolveSamplesheetPath(fq1)
+            def fq2Path = resolveSamplesheetPath(fq2)
+            tuple(meta, fq1Path, fq2Path)
+        }
+    };
+
+    ch_input = ch_samples
+
+    ch_samplesheet = Channel.value(samplesheetFile)
+    
+    def ref_file = resolveSamplesheetPath(params.ref)
+    def ref_file_name = stripQueryAndFragment(ref_file.toString()).tokenize('/').last()
+    def ref_is_gz = ref_file_name.toLowerCase().endsWith('.gz')
+    def ref_is_remote = isRemotePath(params.ref)
+    def ch_ref
+    def ref_prefix
+    ch_ref_file = Channel.value(ref_file)
+
+    if (ref_is_gz) {
+        DECOMPRESS_FASTA(ch_ref_file)
+        ch_ref = DECOMPRESS_FASTA.out.fasta
+        ref_prefix = 'reference.decompressed.fa'
+    } else {
+        ch_ref = ch_ref_file
+        ref_prefix = ref_file_name
+    }
+    
+    // Stage MultiQC config and logo together so the relative logo path in the YAML resolves
+    ch_multiqc_config = file(params.multiqc_config)
+    ch_multiqc_logo   = file("$projectDir/assets/popfun.png")
+    ch_vcf_compare_script = Channel.value(file("$projectDir/bin/vcf_multi_compare.py"))
+    ch_popgen_script = Channel.value(file("$projectDir/bin/popgen_analyses.py"))
+    ch_freebayes_coverage_split_script = Channel.value(file("$projectDir/bin/coverage_to_regions.py"))
+    ch_freebayes_mosdepth_coverage_script = Channel.value(file("$projectDir/bin/mosdepth_intervals_to_coverage.py"))
+
+    // --- STEP 1: QC ---
+    if (params.start_at == 'qc') {
+        if (params.trimmer == 'fastp') {
+            FASTP(ch_input)
+            ch_reads = FASTP.out.trimmed_reads
+            ch_multiqc_reports = ch_multiqc_reports.mix(FASTP.out.json)
+        } 
+        else if (params.trimmer == 'trimmomatic') {
+            FASTQC(ch_input)
+            ch_multiqc_reports = ch_multiqc_reports.mix(FASTQC.out.results)
+
+            TRIMMOMATIC(ch_input)
+            ch_reads = TRIMMOMATIC.out.trimmed_reads
+            ch_multiqc_reports = ch_multiqc_reports.mix(TRIMMOMATIC.out.log)
+        } else { ch_reads = ch_input }
+    } else if (params.start_at == 'alignment') {
+        ch_reads = ch_input
+    }
+
+    if (params.stop_at == 'qc') { return }
+
+    // 2. PREPARE GENOME INDICES
+    if (ref_is_gz) {
+        SAMTOOLS_FAIDX(ch_ref)
+        ch_ref_fai = SAMTOOLS_FAIDX.out.fai
+
+        GATK_DICTIONARY(ch_ref)
+        ch_ref_dict = GATK_DICTIONARY.out.dict
+    } else {
+        def fai_path = "${params.ref}.fai"
+        if (!ref_is_remote && file(fai_path, checkIfExists: false).exists()) { ch_ref_fai = Channel.value(file(fai_path)) }
+        else { SAMTOOLS_FAIDX(ch_ref); ch_ref_fai = SAMTOOLS_FAIDX.out.fai }
+
+        def ref_no_query = stripQueryAndFragment(params.ref)
+        def dict_path = "${ref_no_query.replaceAll(/(?i)\.(fa|fasta)(\.gz)?$/, '')}.dict"
+        if (!ref_is_remote && file(dict_path, checkIfExists: false).exists()) { ch_ref_dict = Channel.value(file(dict_path)) }
+        else { GATK_DICTIONARY(ch_ref); ch_ref_dict = GATK_DICTIONARY.out.dict }
+    }
+
+    if (params.start_at != 'call') {
+        if (params.aligner == 'bwa-mem2') {
+            if (params.bwa_index && file(params.bwa_index).exists()) { ch_align_index = Channel.value(file(params.bwa_index)) }
+            else { BWA_INDEX(ch_ref); ch_align_index = BWA_INDEX.out.index }
+        } else {
+            if (params.bowtie2_index && file(params.bowtie2_index).exists()) { ch_align_index = Channel.value(file(params.bowtie2_index)) }
+            else { BOWTIE2_INDEX(ch_ref); ch_align_index = BOWTIE2_INDEX.out.index }
+        }
+    }
+
+    // 3. PREPARE ANNOTATION (For Qualimap)
+    if (params.annotation) {
+        def annotationPath = resolveSamplesheetPath(params.annotation)
+        ch_annotation_path = Channel.value(annotationPath)
+        def annotationName = stripQueryAndFragment(params.annotation).toLowerCase()
+        if (annotationName.endsWith('.gff') || annotationName.endsWith('.gff3')) {
+            GFF_TO_BED(ch_annotation_path)
+            ch_annot_bed = GFF_TO_BED.out.bed
+        } else if (annotationName.endsWith('.bed')) {
+            ch_annot_bed = ch_annotation_path
+        } else { error "Annotation file must be .gff, .gff3, or .bed format" }
+    } else { ch_annot_bed = Channel.value(file("$projectDir/assets/NO_FILE")) }
+
+    // --- STEP 2: ALIGNMENT ---
+    if (params.start_at == 'call') {
+        ch_bams_with_existing_index = ch_input
+            .filter { meta, bam -> meta.has_bai }
+            .map { meta, bam -> tuple(meta.findAll { k, v -> k != 'has_bai' }, bam) }
+
+        ch_bams_missing_index = ch_input
+            .filter { meta, bam -> !meta.has_bai }
+            .map { meta, bam -> tuple(meta.findAll { k, v -> k != 'has_bai' }, bam) }
+
+        SAMTOOLS_INDEX_INPUT_BAM(ch_bams_missing_index)
+        ch_bams = ch_bams_with_existing_index.mix(SAMTOOLS_INDEX_INPUT_BAM.out.bam)
+    } else if (params.aligner == 'bwa-mem2') {
+        BWA_ALIGN(ch_reads, ch_align_index, ref_prefix)
+        SAMTOOLS_SORT_ALIGN(BWA_ALIGN.out.sam)
+        ch_bams = SAMTOOLS_SORT_ALIGN.out.bam 
+    } else {
+        BOWTIE2_ALIGN(ch_reads, ch_align_index, ref_prefix)
+        SAMTOOLS_SORT_ALIGN(BOWTIE2_ALIGN.out.sam)
+        ch_bams = SAMTOOLS_SORT_ALIGN.out.bam 
+    }
+
+    // =========================================================
+    // BRANCH A: ERROR ESTIMATION (Per-Library Processing)
+    // =========================================================
+    if (params.error_estimate) {
+        
+        // Isolate samples with >1 library by temporarily pulling 'meta.id' to the front as the grouping key
+        ch_multi_libs = ch_bams
+            .map { meta, bam -> tuple(meta.id, meta, bam) }
+            .groupTuple(by: 0)
+            .filter { id, metas, bams -> bams.size() > 1 }
+            .flatMap { id, metas, bams -> 
+                // Unpack back into standard [meta, bam] streams
+                def result = []
+                for (int i = 0; i < metas.size(); i++) { result.add(tuple(metas[i], bams[i])) }
+                return result
+            }
+        
+        def ch_error_dedup_bam
+
+        if (params.markdup_tool == 'bamsormadup') {
+            MARK_DUPLICATES_LIB_BAMSORMADUP(ch_multi_libs)
+            ch_error_dedup_bam = MARK_DUPLICATES_LIB_BAMSORMADUP.out.dedup_bam
+        } else if (params.markdup_tool == 'sambamba') {
+            MARK_DUPLICATES_LIB_SAMBAMBA(ch_multi_libs)
+            ch_error_dedup_bam = MARK_DUPLICATES_LIB_SAMBAMBA.out.dedup_bam
+        } else if (params.markdup_tool == 'fastdup') {
+            MARK_DUPLICATES_LIB_FASTDUP(ch_multi_libs)
+            ch_error_dedup_bam = MARK_DUPLICATES_LIB_FASTDUP.out.dedup_bam
+        } else {
+            MARK_DUPLICATES_LIB(ch_multi_libs)
+            ch_error_dedup_bam = MARK_DUPLICATES_LIB.out.dedup_bam
+        }
+
+        if (effectiveErrorEstimateCaller == 'gatk') {
+            GATK_CALL_LIB(ch_error_dedup_bam, ch_ref, ch_ref_fai, ch_ref_dict)
+            ch_lib_vcfs = GATK_CALL_LIB.out.vcf
+        } else {
+            FREEBAYES_CALL_LIB(ch_error_dedup_bam, ch_ref, ch_ref_fai)
+            ch_lib_vcfs = FREEBAYES_CALL_LIB.out.vcf
+        }
+
+        // Compare library-level discordance before filtering.
+        ch_vcfs_to_compare_raw = ch_lib_vcfs
+            .map { meta, vcf, idx -> tuple(meta.id, vcf, idx) }
+            .groupTuple(by: 0)
+            .map { id, vcfs, idxs -> tuple([id: id], 'raw', vcfs, idxs) }
+
+        VCF_MULTI_COMPARE_RAW(ch_vcfs_to_compare_raw, ch_vcf_compare_script)
+
+        // Filter each library VCF, then compare discordance again after filtering.
+        // Give each library a unique meta.id (sample_library) so VCF_FILTER_LIB output
+        // filenames don't collide; also carry the original sample id for re-grouping.
+        ch_lib_vcfs_for_filter = ch_lib_vcfs.map { meta, vcf, idx ->
+            def lib_meta = [ id: "${meta.id}_${meta.library}", sample: meta.id, library: meta.library ]
+            tuple(lib_meta, vcf)
+        }
+        VCF_FILTER_LIB(ch_lib_vcfs_for_filter)
+
+        ch_filtered_for_compare = VCF_FILTER_LIB.out.filtered_vcf
+            .join(VCF_FILTER_LIB.out.filtered_vcf_tbi, by: 0)
+            .map { meta, vcf, tbi -> tuple(meta.sample, vcf, tbi) }
+
+        ch_vcfs_to_compare_filtered = ch_filtered_for_compare
+            .groupTuple(by: 0)
+            .map { id, vcfs, idxs -> tuple([id: id], 'filtered', vcfs, idxs) }
+
+        VCF_MULTI_COMPARE_FILTERED(ch_vcfs_to_compare_filtered, ch_vcf_compare_script)
+
+        ch_error_reports = VCF_MULTI_COMPARE_RAW.out.report.mix(VCF_MULTI_COMPARE_FILTERED.out.report)
+        VCF_DISCORDANCE_MQC(ch_error_reports.collect())
+        ch_multiqc_reports = ch_multiqc_reports.mix(ch_error_reports)
+        ch_multiqc_reports = ch_multiqc_reports.mix(VCF_DISCORDANCE_MQC.out.mqc_rate_csv)
+        ch_multiqc_reports = ch_multiqc_reports.mix(VCF_DISCORDANCE_MQC.out.mqc_metrics_csv)
+    }
+
+    // =========================================================
+    // BRANCH B: STANDARD WORKFLOW (Merged Processing)
+    // =========================================================
+    
+    // Merge BAMs by creating a new meta map containing ONLY the sample ID
+    ch_for_merge = ch_bams.map { meta, bam -> 
+        def new_meta = [ id: meta.id ]
+        tuple(new_meta, bam) 
+    }.groupTuple()
+    
+    SAMTOOLS_MERGE(ch_for_merge)
+    def ch_dedup_bam_for_call
+    def ch_dedup_metrics
+
+    if (params.markdup_tool == 'bamsormadup') {
+        MARK_DUPLICATES_BAMSORMADUP(SAMTOOLS_MERGE.out.merged_bam)
+        ch_dedup_bam_for_call = MARK_DUPLICATES_BAMSORMADUP.out.dedup_bam
+        ch_dedup_metrics = MARK_DUPLICATES_BAMSORMADUP.out.metrics
+    } else if (params.markdup_tool == 'sambamba') {
+        MARK_DUPLICATES_SAMBAMBA(SAMTOOLS_MERGE.out.merged_bam)
+        ch_dedup_bam_for_call = MARK_DUPLICATES_SAMBAMBA.out.dedup_bam
+        ch_dedup_metrics = MARK_DUPLICATES_SAMBAMBA.out.metrics
+    } else if (params.markdup_tool == 'fastdup') {
+        MARK_DUPLICATES_FASTDUP(SAMTOOLS_MERGE.out.merged_bam)
+        ch_dedup_bam_for_call = MARK_DUPLICATES_FASTDUP.out.dedup_bam
+        ch_dedup_metrics = MARK_DUPLICATES_FASTDUP.out.metrics
+    } else {
+        MARK_DUPLICATES(SAMTOOLS_MERGE.out.merged_bam)
+        ch_dedup_bam_for_call = MARK_DUPLICATES.out.dedup_bam
+        ch_dedup_metrics = MARK_DUPLICATES.out.metrics
+    }
+    ch_multiqc_reports = ch_multiqc_reports.mix(ch_dedup_metrics)
+    
+    QUALIMAP(ch_dedup_bam_for_call, ch_annot_bed)
+    // Note: Use .results if your module emits tuple(meta, dir), or .report if it emits path(dir)
+    ch_multiqc_reports = ch_multiqc_reports.mix(QUALIMAP.out.results.map { meta, dir -> dir })
+
+    if (params.stop_at == 'alignment') { return }
+
+    // --- STEP 3: VARIANT CALLING ---
+    ch_final_vcf = Channel.empty()
+
+    if (params.caller == 'gatk') {
+        // 1. Call individual gVCFs
+        GATK_HAPLOTYPECALLER(ch_dedup_bam_for_call, ch_ref, ch_ref_fai, ch_ref_dict)
+        
+        // 2. Collect all gVCFs and indices into flat lists
+        ch_gvcfs = GATK_HAPLOTYPECALLER.out.gvcf.map { meta, gvcf, tbi -> gvcf }.collect()
+        ch_tbis  = GATK_HAPLOTYPECALLER.out.gvcf.map { meta, gvcf, tbi -> tbi }.collect()
+        
+        // 3. Combine gVCFs
+        GATK_COMBINEGVCFS(ch_gvcfs, ch_tbis, ch_ref, ch_ref_fai, ch_ref_dict)
+        
+        // 4. Joint Genotype the cohort
+        GATK_GENOTYPEGVCFS(GATK_COMBINEGVCFS.out.gvcf, GATK_COMBINEGVCFS.out.tbi, ch_ref, ch_ref_fai, ch_ref_dict)
+        
+        // 5. Package for filtering
+        ch_final_vcf = GATK_GENOTYPEGVCFS.out.vcf.map { vcf -> tuple([id: "gatk_joint"], vcf) }
+        
+    } else if (params.caller == 'freebayes' && params.freebayes_mode == 'population') {
+        // Collect cohort BAM/BAI files into separate channels.
+        // Wrap each collected list in a one-element list so combine keeps
+        // each payload as one field instead of flattening list elements.
+        ch_population_bams_raw = ch_dedup_bam_for_call
+            .map { meta, bam, bai -> bam }
+            .collect()
+
+        ch_population_bams = ch_population_bams_raw
+            .map { bams -> [bams] }
+
+        ch_population_bais_raw = ch_dedup_bam_for_call
+            .map { meta, bam, bai -> bai }
+            .collect()
+
+        ch_population_bais = ch_population_bais_raw
+            .map { bais -> [bais] }
+
+        def ch_population_region_files
+        if (params.freebayes_region_splitter == 'coverage') {
+            if (params.freebayes_coverage_tool == 'sambamba') {
+                FREEBAYES_COVERAGE_SAMBAMBA(ch_population_bams_raw, ch_population_bais_raw)
+                FREEBAYES_SPLIT_REGIONS_COVERAGE(
+                    ch_ref_fai,
+                    Channel.value(freebayesCoverageRegions),
+                    FREEBAYES_COVERAGE_SAMBAMBA.out.coverage,
+                    ch_freebayes_coverage_split_script
+                )
+                ch_population_region_files = validateFreebayesRegionFiles(FREEBAYES_SPLIT_REGIONS_COVERAGE.out.regions)
+            } else {
+                FREEBAYES_COVERAGE_MOSDEPTH(ch_population_bams_raw, ch_population_bais_raw)
+                FREEBAYES_SPLIT_REGIONS_MOSDEPTH(
+                    ch_ref_fai,
+                    Channel.value(freebayesCoverageRegions),
+                    FREEBAYES_COVERAGE_MOSDEPTH.out.per_base,
+                    ch_freebayes_mosdepth_coverage_script,
+                    ch_freebayes_coverage_split_script
+                )
+                ch_population_region_files = validateFreebayesRegionFiles(FREEBAYES_SPLIT_REGIONS_MOSDEPTH.out.regions)
+            }
+        } else {
+            FREEBAYES_SPLIT_REGIONS(
+                ch_ref_fai,
+                Channel.value(params.freebayes_chunk_size)
+            )
+            ch_population_region_files = validateFreebayesRegionFiles(FREEBAYES_SPLIT_REGIONS.out.regions)
+        }
+
+        ch_population_regions = ch_population_region_files
+            .flatten()
+            .map { region_file ->
+                def chrom = region_file.baseName.replaceAll(/\.regions$/, '')
+                tuple([id: chrom], region_file)
+            }
+
+        ch_population_jobs = ch_population_regions
+            .combine(ch_population_bams)
+            .combine(ch_population_bais)
+            .combine(ch_ref)
+            .combine(ch_ref_fai)
+            .map { row ->
+                def meta = row[0]
+                def region_file = row[1]
+                def bams = row[2]
+                def bais = row[3]
+                def ref = row[4]
+                def ref_idx = row[5]
+                tuple(meta, region_file, bams, bais, ref, ref_idx)
+            }
+
+        FREEBAYES_POPULATION(ch_population_jobs)
+
+        ch_population_concat_inputs = FREEBAYES_POPULATION.out.vcf
+            .map { meta, vcf, tbi -> tuple(vcf, tbi) }
+            .toList()
+            .map { shards -> tuple(shards.collect { it[0] }, shards.collect { it[1] }) }
+
+        BCFTOOLS_CONCAT(ch_population_concat_inputs)
+        ch_final_vcf = BCFTOOLS_CONCAT.out.vcf.map { vcf -> tuple([id: "population"], vcf) }
+        
+    } else if (params.caller == 'ensemble') {
+        // --- Freebayes population arm ---
+        ch_ens_population_bams_raw = ch_dedup_bam_for_call
+            .map { meta, bam, bai -> bam }
+            .collect()
+
+        ch_ens_population_bams = ch_ens_population_bams_raw
+            .map { bams -> [bams] }
+
+        ch_ens_population_bais_raw = ch_dedup_bam_for_call
+            .map { meta, bam, bai -> bai }
+            .collect()
+
+        ch_ens_population_bais = ch_ens_population_bais_raw
+            .map { bais -> [bais] }
+
+        def ch_ens_region_files
+        if (params.freebayes_region_splitter == 'coverage') {
+            if (params.freebayes_coverage_tool == 'sambamba') {
+                FREEBAYES_COVERAGE_SAMBAMBA(ch_ens_population_bams_raw, ch_ens_population_bais_raw)
+                FREEBAYES_SPLIT_REGIONS_COVERAGE(
+                    ch_ref_fai,
+                    Channel.value(freebayesCoverageRegions),
+                    FREEBAYES_COVERAGE_SAMBAMBA.out.coverage,
+                    ch_freebayes_coverage_split_script
+                )
+                ch_ens_region_files = validateFreebayesRegionFiles(FREEBAYES_SPLIT_REGIONS_COVERAGE.out.regions)
+            } else {
+                FREEBAYES_COVERAGE_MOSDEPTH(ch_ens_population_bams_raw, ch_ens_population_bais_raw)
+                FREEBAYES_SPLIT_REGIONS_MOSDEPTH(
+                    ch_ref_fai,
+                    Channel.value(freebayesCoverageRegions),
+                    FREEBAYES_COVERAGE_MOSDEPTH.out.per_base,
+                    ch_freebayes_mosdepth_coverage_script,
+                    ch_freebayes_coverage_split_script
+                )
+                ch_ens_region_files = validateFreebayesRegionFiles(FREEBAYES_SPLIT_REGIONS_MOSDEPTH.out.regions)
+            }
+        } else {
+            FREEBAYES_SPLIT_REGIONS(
+                ch_ref_fai,
+                Channel.value(params.freebayes_chunk_size)
+            )
+            ch_ens_region_files = validateFreebayesRegionFiles(FREEBAYES_SPLIT_REGIONS.out.regions)
+        }
+
+        ch_ens_regions = ch_ens_region_files
+            .flatten()
+            .map { region_file ->
+                def chrom = region_file.baseName.replaceAll(/\.regions$/, '')
+                tuple([id: "ens_fb_${chrom}"], region_file)
+            }
+
+        ch_ens_fb_jobs = ch_ens_regions
+            .combine(ch_ens_population_bams)
+            .combine(ch_ens_population_bais)
+            .combine(ch_ref)
+            .combine(ch_ref_fai)
+            .map { row ->
+                def meta = row[0]
+                def region_file = row[1]
+                def bams = row[2]
+                def bais = row[3]
+                def ref = row[4]
+                def ref_idx = row[5]
+                tuple(meta, region_file, bams, bais, ref, ref_idx)
+            }
+
+        FREEBAYES_POPULATION(ch_ens_fb_jobs)
+
+        ch_ens_fb_concat_inputs = FREEBAYES_POPULATION.out.vcf
+            .map { meta, vcf, tbi -> tuple(vcf, tbi) }
+            .toList()
+            .map { shards -> tuple(shards.collect { it[0] }, shards.collect { it[1] }) }
+
+        BCFTOOLS_CONCAT(ch_ens_fb_concat_inputs)
+
+        // --- GATK arm ---
+        GATK_HAPLOTYPECALLER(ch_dedup_bam_for_call, ch_ref, ch_ref_fai, ch_ref_dict)
+        ch_ens_gvcfs = GATK_HAPLOTYPECALLER.out.gvcf.map { meta, gvcf, tbi -> gvcf }.collect()
+        ch_ens_tbis  = GATK_HAPLOTYPECALLER.out.gvcf.map { meta, gvcf, tbi -> tbi }.collect()
+        GATK_COMBINEGVCFS(ch_ens_gvcfs, ch_ens_tbis, ch_ref, ch_ref_fai, ch_ref_dict)
+        GATK_GENOTYPEGVCFS(GATK_COMBINEGVCFS.out.gvcf, GATK_COMBINEGVCFS.out.tbi, ch_ref, ch_ref_fai, ch_ref_dict)
+
+        // --- Filter individual caller VCFs before ensemble combine ---
+        ch_ens_gatk_for_filter = GATK_GENOTYPEGVCFS.out.vcf.map { vcf -> tuple([id: "gatk_joint"], vcf) }
+        VCF_FILTER_ENS_GATK(ch_ens_gatk_for_filter)
+
+        ch_ens_fb_for_filter = BCFTOOLS_CONCAT.out.vcf.map { vcf -> tuple([id: "population"], vcf) }
+        VCF_FILTER_ENS_FB(ch_ens_fb_for_filter)
+
+        VCF_ENSEMBLE_NORMALIZE(
+            VCF_FILTER_ENS_GATK.out.filtered_vcf.map { meta, vcf -> vcf },
+            VCF_FILTER_ENS_GATK.out.filtered_vcf_tbi.map { meta, tbi -> tbi },
+            VCF_FILTER_ENS_FB.out.filtered_vcf.map { meta, vcf -> vcf },
+            VCF_FILTER_ENS_FB.out.filtered_vcf_tbi.map { meta, tbi -> tbi },
+            ch_ref
+        )
+
+        if (params.ensemble_matcher == 'rtg') {
+            VCF_ENSEMBLE_MATCH_RTG(
+                VCF_ENSEMBLE_NORMALIZE.out.gatk_vcf,
+                VCF_ENSEMBLE_NORMALIZE.out.gatk_tbi,
+                VCF_ENSEMBLE_NORMALIZE.out.freebayes_vcf,
+                VCF_ENSEMBLE_NORMALIZE.out.freebayes_tbi,
+                ch_ref
+            )
+
+            VCF_ENSEMBLE_ASSEMBLE(
+                VCF_ENSEMBLE_NORMALIZE.out.gatk_vcf,
+                VCF_ENSEMBLE_NORMALIZE.out.gatk_tbi,
+                VCF_ENSEMBLE_NORMALIZE.out.freebayes_vcf,
+                VCF_ENSEMBLE_NORMALIZE.out.freebayes_tbi,
+                VCF_ENSEMBLE_MATCH_RTG.out.gatk_keep,
+                VCF_ENSEMBLE_MATCH_RTG.out.freebayes_keep
+            )
+            ch_final_vcf = VCF_ENSEMBLE_ASSEMBLE.out.vcf.map { label, vcf, tbi -> tuple([id: label], vcf) }
+        } else {
+            // --- Combine filtered VCFs ---
+            VCF_ENSEMBLE_COMBINE(
+                VCF_ENSEMBLE_NORMALIZE.out.gatk_vcf,
+                VCF_ENSEMBLE_NORMALIZE.out.gatk_tbi,
+                VCF_ENSEMBLE_NORMALIZE.out.freebayes_vcf,
+                VCF_ENSEMBLE_NORMALIZE.out.freebayes_tbi
+            )
+            ch_final_vcf = VCF_ENSEMBLE_COMBINE.out.vcf.map { label, vcf, tbi -> tuple([id: label], vcf) }
+        }
+
+    } else {
+        // Fallback: Individual Freebayes calling & standard merging
+        ch_individual_bams_raw = ch_dedup_bam_for_call
+            .map { meta, bam, bai -> bam }
+            .collect()
+
+        ch_individual_bais_raw = ch_dedup_bam_for_call
+            .map { meta, bam, bai -> bai }
+            .collect()
+
+        def ch_individual_region_files
+        if (params.freebayes_region_splitter == 'coverage') {
+            if (params.freebayes_coverage_tool == 'sambamba') {
+                FREEBAYES_COVERAGE_SAMBAMBA(ch_individual_bams_raw, ch_individual_bais_raw)
+                FREEBAYES_SPLIT_REGIONS_COVERAGE(
+                    ch_ref_fai,
+                    Channel.value(freebayesCoverageRegions),
+                    FREEBAYES_COVERAGE_SAMBAMBA.out.coverage,
+                    ch_freebayes_coverage_split_script
+                )
+                ch_individual_region_files = validateFreebayesRegionFiles(FREEBAYES_SPLIT_REGIONS_COVERAGE.out.regions)
+            } else {
+                FREEBAYES_COVERAGE_MOSDEPTH(ch_individual_bams_raw, ch_individual_bais_raw)
+                FREEBAYES_SPLIT_REGIONS_MOSDEPTH(
+                    ch_ref_fai,
+                    Channel.value(freebayesCoverageRegions),
+                    FREEBAYES_COVERAGE_MOSDEPTH.out.per_base,
+                    ch_freebayes_mosdepth_coverage_script,
+                    ch_freebayes_coverage_split_script
+                )
+                ch_individual_region_files = validateFreebayesRegionFiles(FREEBAYES_SPLIT_REGIONS_MOSDEPTH.out.regions)
+            }
+        } else {
+            FREEBAYES_SPLIT_REGIONS(
+                ch_ref_fai,
+                Channel.value(params.freebayes_chunk_size)
+            )
+            ch_individual_region_files = validateFreebayesRegionFiles(FREEBAYES_SPLIT_REGIONS.out.regions)
+        }
+
+        ch_individual_region_bundle = ch_individual_region_files
+            .flatten()
+            .collect()
+            .map { region_files -> [region_files] }
+
+        ch_individual_jobs = ch_dedup_bam_for_call
+            .combine(ch_individual_region_bundle)
+            .combine(ch_ref)
+            .map { row ->
+                def meta = row[0]
+                def bam = row[1]
+                def bai = row[2]
+                def region_files = row[3]
+                def ref = row[4]
+                tuple(meta, bam, bai, region_files, ref)
+            }
+
+        FREEBAYES(ch_individual_jobs)
+        BCFTOOLS_MERGE(FREEBAYES.out.vcf.collect(), FREEBAYES.out.tbi.collect())
+        ch_final_vcf = BCFTOOLS_MERGE.out.vcf.map { vcf -> tuple([id: "merged"], vcf) }
+    }
+
+    if (params.stop_at == 'call') { return }
+
+    // --- STEP 4: FILTERING & METRICS ---
+    BCFTOOLS_STATS_RAW(ch_final_vcf)
+    ch_multiqc_reports = ch_multiqc_reports.mix(BCFTOOLS_STATS_RAW.out.stats)
+
+    VCF_FILTER_FINAL(ch_final_vcf)
+
+    ch_filter_out = VCF_FILTER_FINAL.out.filtered_vcf
+    ch_filter_out_tbi = VCF_FILTER_FINAL.out.filtered_vcf_tbi
+
+    ch_filtered_vcf = ch_filter_out.map { meta, vcf -> tuple([id: "${meta.id}_filtered"], vcf) }
+
+    BCFTOOLS_STATS_FILTERED(ch_filtered_vcf)
+    ch_multiqc_reports = ch_multiqc_reports.mix(BCFTOOLS_STATS_FILTERED.out.stats)
+
+    if (params.stop_at == 'filter') { return }
+    // --- STEP 5: POPULATION GENETICS ---
+    if (params.popgen) {
+        ch_filtered_vcf_for_popgen = ch_filter_out
+            .join(ch_filter_out_tbi, by: 0)
+            .map { meta, vcf, tbi -> tuple(vcf, tbi) }
+        POPGEN_ANALYSES(
+            ch_filtered_vcf_for_popgen,
+            ch_samplesheet,
+            Channel.value(params.popgen_tree_method),
+            Channel.value(params.popgen_legend_order),
+            ch_popgen_script
+        )
+        ch_multiqc_reports = ch_multiqc_reports.mix(POPGEN_ANALYSES.out.pca_mqc)
+        ch_multiqc_reports = ch_multiqc_reports.mix(POPGEN_ANALYSES.out.tree_mqc)
+    }
+    if (params.stop_at == 'popgen') { return }
+    // --- FINAL STEP: MULTIQC ---
+
+    GENERATE_SOFTWARE_VERSIONS_MQC(
+        Channel.value(params.trimmer),
+        Channel.value(params.aligner),
+        Channel.value(params.caller),
+        Channel.value(params.markdup_tool),
+        Channel.value(params.annotation),
+        Channel.value(params.popgen)
+    )
+
+    ch_multiqc_reports = ch_multiqc_reports.mix(GENERATE_SOFTWARE_VERSIONS_MQC.out.versions)
+    
+    // Pass config and logo so both are staged in the work directory
+    MULTIQC(ch_multiqc_reports.collect(), ch_multiqc_config, ch_multiqc_logo)
+
+}

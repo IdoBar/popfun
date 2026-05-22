@@ -11,6 +11,22 @@ process SAMTOOLS_MERGE {
     """
 }
 
+process SAMTOOLS_INDEX_INPUT_BAM {
+    tag "$meta.id"
+    label 'sc_medium'
+    conda "bioconda::samtools=1.23.1"
+    container 'quay.io/biocontainers/samtools:1.23.1--ha83d96e_0'
+    input: tuple val(meta), path(bam)
+    output:
+        tuple val(meta), path("${meta.id}_${meta.library}.sorted.bam"), emit: bam
+        tuple val(meta), path("${meta.id}_${meta.library}.sorted.bam.bai"), emit: bai
+    script:
+    """
+    ln -s "$bam" "${meta.id}_${meta.library}.sorted.bam"
+    samtools index -@ ${task.cpus} "${meta.id}_${meta.library}.sorted.bam"
+    """
+}
+
 process MARK_DUPLICATES {
     tag "$meta.id"
     label 'sc_medium'
@@ -22,7 +38,7 @@ process MARK_DUPLICATES {
         path "${meta.id}.metrics.txt", emit: metrics 
     script:
     """
-    gatk MarkDuplicates -I $bam -O ${meta.id}.dedup.bam -M ${meta.id}.metrics.txt --CREATE_INDEX true --READ_NAME_REGEX null
+    gatk MarkDuplicates -I "$bam" -O "${meta.id}.dedup.bam" -M "${meta.id}.metrics.txt" --CREATE_INDEX true --READ_NAME_REGEX null
     """
 }
 
@@ -37,9 +53,9 @@ process MARK_DUPLICATES_BAMSORMADUP {
         path "${meta.id}.metrics.txt", emit: metrics
     script:
     """
-    bamcollate2 inputformat=bam outputformat=bam level=1 < $bam | \
-    bamsormadup SO=coordinate inputformat=bam level=1 threads=${task.cpus} M=${meta.id}.metrics.txt > ${meta.id}.dedup.bam
-    bamindex < ${meta.id}.dedup.bam > ${meta.id}.dedup.bai
+    bamcollate2 inputformat=bam outputformat=bam level=1 < "$bam" | \
+    bamsormadup SO=coordinate inputformat=bam level=1 threads=${task.cpus} M="${meta.id}.metrics.txt" > "${meta.id}.dedup.bam"
+    bamindex < "${meta.id}.dedup.bam" > "${meta.id}.dedup.bai"
     """
 }
 
@@ -54,8 +70,8 @@ process MARK_DUPLICATES_SAMBAMBA {
         path "${meta.id}.sambamba_markdup.log", emit: metrics
     script:
     """
-    sambamba markdup -t ${task.cpus} $bam ${meta.id}.dedup.bam 2> ${meta.id}.sambamba_markdup.log
-    sambamba index -t ${task.cpus} ${meta.id}.dedup.bam ${meta.id}.dedup.bai
+    sambamba markdup -t ${task.cpus} "$bam" "${meta.id}.dedup.bam" 2> "${meta.id}.sambamba_markdup.log"
+    sambamba index -t ${task.cpus} "${meta.id}.dedup.bam" "${meta.id}.dedup.bai"
     """
 }
 
@@ -70,8 +86,8 @@ process MARK_DUPLICATES_FASTDUP {
         path "${meta.id}.metrics.txt", emit: metrics
     script:
     """
-    fastdup --input $bam --output ${meta.id}.dedup.bam --metrics ${meta.id}.metrics.txt --num-threads ${task.cpus}
-    samtools index -@ ${task.cpus} ${meta.id}.dedup.bam ${meta.id}.dedup.bai
+    fastdup --input "$bam" --output "${meta.id}.dedup.bam" --metrics "${meta.id}.metrics.txt" --num-threads ${task.cpus}
+    samtools index -@ ${task.cpus} "${meta.id}.dedup.bam" "${meta.id}.dedup.bai"
     """
 }
 
@@ -91,15 +107,15 @@ process QUALIMAP {
 
     script:
     // Only append the flag if a bed file was actually staged
-    def feature_arg = bed.name != 'NO_FILE' ? "-gff $bed" : ""
+    def feature_arg = bed.name != 'NO_FILE' ? "-gff \"$bed\"" : ""
     
     """
     unset DISPLAY
     qualimap bamqc \\
-        -bam $bam \\
+        -bam "$bam" \\
         -nt ${task.cpus} \\
         $feature_arg \\
-        -outdir ${meta.id}_qualimap \\
+        -outdir "${meta.id}_qualimap" \\
         --java-mem-size=4G
     """
 }

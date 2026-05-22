@@ -1,6 +1,6 @@
 process POPGEN_ANALYSES {
     label 'sc_medium'
-    conda "conda-forge::python=3.9 conda-forge::numpy=1.23.5 conda-forge::pandas=1.4.2 bioconda::pysam=0.19.1 bioconda::iqtree=2.4.0 bioconda::mrbayes=3.2.7"
+    conda "conda-forge::python=3.9 conda-forge::numpy=1.23.5 bioconda::pysam=0.19.1 bioconda::iqtree=2.4.0 bioconda::mrbayes=3.2.7"
     container 'ghcr.io/idobar/popgen:latest'
 
     input:
@@ -18,10 +18,10 @@ process POPGEN_ANALYSES {
 
     script:
     """
-    python ${popgen_script} \
-        --vcf ${vcf} \
-        --samplesheet ${samplesheet} \
-        --tree-method ${tree_method} \
-        --legend-order ${legend_order}
+    python "$popgen_script" \
+        --vcf "$vcf" \
+        --samplesheet "$samplesheet" \
+        --tree-method "$tree_method" \
+        --legend-order "$legend_order"
     """
 }

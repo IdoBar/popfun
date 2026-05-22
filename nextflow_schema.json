@@ -1,8 +1,8 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema",
-  "$id": "https://raw.githubusercontent.com/nf-core/hapfun/master/nextflow_schema.json",
-  "title": "HapFun pipeline parameters",
-  "description": "Haploid Fungal SNP Calling Pipeline",
+  "$id": "https://raw.githubusercontent.com/IdoBar/popfun/main/nextflow_schema.json",
+  "title": "PopFun pipeline parameters",
+  "description": "Population-Scale Fungal Variant Calling Pipeline",
   "type": "object",
   "definitions": {
     "input_output_options": {
@@ -23,30 +23,71 @@
         "trimmomatic_args": { "type": "string",
           "default": "ILLUMINACLIP:TruSeq3-PE.fa:2:30:10 LEADING:3 TRAILING:3 SLIDINGWINDOW:4:15 MINLEN:36"},
         "aligner": { "type": "string", "enum": ["bwa-mem2", "bowtie2"], "default": "bwa-mem2" },
-        "caller": { "type": "string", "enum": ["gatk", "freebayes"], "default": "freebayes" },
+        "caller": { "type": "string", "enum": ["gatk", "freebayes", "ensemble"], "default": "freebayes" },
+        "ensemble_matcher": {
+          "type": "string",
+          "enum": ["bcftools", "rtg"],
+          "default": "bcftools",
+          "description": "Matching engine for --caller ensemble. 'bcftools' performs strict key-based matching after normalization; 'rtg' uses rtg vcfeval to derive shared calls before final selection."
+        },
+        "error_estimate_caller": {
+          "type": ["string", "null"],
+          "enum": ["gatk", "freebayes", null],
+          "default": null,
+          "description": "Caller used for the optional per-library error-estimation branch. Defaults to the main --caller value, except --caller ensemble falls back to 'freebayes'. Can be overridden to 'gatk' or 'freebayes'."
+        },
         "markdup_tool": {
           "type": "string",
           "enum": ["gatk", "bamsormadup", "sambamba", "fastdup"],
           "default": "bamsormadup",
           "description": "Duplicate marking tool. 'gatk' uses GATK MarkDuplicates; 'bamsormadup' uses biobambam bamsormadup; 'sambamba' uses sambamba markdup; 'fastdup' uses FastDup (Picard-compatible, faster)."
         },
+        "save_bams": {
+          "type": "string",
+          "enum": ["none", "merged", "all"],
+          "default": "none",
+          "description": "Control which BAMs are published to the results directory. 'none' publishes no BAMs, 'merged' publishes merged BAMs only, and 'all' publishes both individual aligned BAMs and merged BAMs."
+        },
         "freebayes_mode": { "type": "string", "enum": ["individual", "population"], "default": "population" },
+        "freebayes_region_splitter": {
+          "type": "string",
+          "enum": ["fai", "coverage"],
+          "default": "coverage",
+          "description": "How to split regions for Freebayes parallel region fan-out: coverage-balanced regions ('coverage') or fixed-size FASTA chunks ('fai')."
+        },
         "freebayes_chunk_size": {
           "type": "integer",
-          "default": 500000,
+          "default": 100000,
           "minimum": 1,
           "description": "Chunk size passed to fasta_generate_regions.py for Freebayes population-mode sharding."
         },
+        "freebayes_coverage_tool": {
+          "type": "string",
+          "enum": ["sambamba", "mosdepth"],
+          "default": "mosdepth",
+          "description": "Coverage tool used when freebayes_region_splitter is set to 'coverage'. 'mosdepth' converts mosdepth per-base intervals into the coverage stream expected by the vendored Freebayes helper. 'sambamba' uses sambamba depth base directly across all staged BAMs."
+        },
+        "freebayes_coverage_regions": {
+          "type": "integer",
+          "default": 500,
+          "minimum": 1,
+          "description": "Target number of coverage-balanced regions to generate when freebayes_region_splitter is set to 'coverage'."
+        },
+        "freebayes_max_chunks": {
+          "type": "integer",
+          "default": 2000,
+          "minimum": 1,
+          "description": "Maximum number of Freebayes target regions allowed in the largest generated per-chromosome region file. The workflow aborts if this limit is exceeded so chunk sizes can be increased before fan-out creates too many tiny tasks."
+        },
+        "freebayes_debug": {
+          "type": "boolean",
+          "default": false,
+          "description": "When true, save Freebayes per-region stderr logs and TSV timing diagnostics. When false, skip writing those debug files."
+        },
         "freebayes_args": {
           "type": "string",
-          "default": "--genotype-qualities",
-          "description": "Additional arguments passed to Freebayes. Includes --genotype-qualities by default so GQ fields are emitted for downstream filtering."
-        },
-        "caller_inner_threads": {
-          "type": "integer",
-          "default": 4,
-          "minimum": 1,
-          "description": "Maximum within-task chromosome parallelism for FREEBAYES, FREEBAYES_POPULATION, and GATK_HAPLOTYPECALLER. Effective value per task is min(task.cpus, caller_inner_threads)."
+          "default": "--genotype-qualities --use-best-n-alleles 4",
+          "description": "Additional arguments passed to Freebayes. Includes --genotype-qualities by default so GQ fields are emitted for downstream filtering, plus --use-best-n-alleles 4 as a conservative performance guard in problematic low-complexity or ultra-high-coverage regions."
         }
       }
     },
@@ -70,9 +111,9 @@
       "title": "Pipeline Logic",
       "type": "object",
       "properties": {
-        "start_step": {
+        "start_at": {
           "type": "string",
-          "enum": ["qc", "alignment"],
+          "enum": ["qc", "alignment", "call"],
           "default": "qc"
         },
         "stop_at": {
