@@ -49,7 +49,6 @@ By default, **PopFun** performs the following steps:
     * Population mode can split chromosomes into multiple sub-regions for finer internal Freebayes region fan-out using either fixed-size FASTA chunks or BAI data-aware regioning.
     * After global region generation, per-chromosome region files are produced so each population shard remains chromosome-scoped for concatenation.
     * `--caller ensemble` runs both GATK and Freebayes population calling, filters each caller VCF first, then combines only shared REF/ALT calls after reference-aware normalization (`bcftools norm -f`). At each shared site, it retains the higher-QUAL representation and reports raw caller VCFs in the results directory.
-    * `--save_bams` controls which BAM files are published to `results/aligned`: `none` (default) publishes no BAMs, `merged` publishes only merged BAMs under `results/aligned/merged`, and `all` publishes both individual aligned BAM/BAI pairs under `results/aligned/ind` and merged BAMs under `results/aligned/merged`.
 7. **Error Estimation (Optional)**: If `--error_estimate true` is flagged, the pipeline automatically separates replicate libraries, calls variants on them independently, and calculates genotype discordance rates using a custom Python module. The raw per-library VCFs used in this comparison are also retained in `results/variants/error_estimate_libraries/`.
 8. **Population Genetics (Optional)**: If `--popgen true`, PopFun performs PCA (PC1-PC3) and constructs a phylogenetic tree from the final cohort VCF (regardless of variant caller and calling mode), then adds both panels to MultiQC. If a `pop` column is present in the samplesheet, it is used to color PCA markers and tree nodes.
 9. **Variant Filtering**: Strictly filters VCFs based on Depth (DP), Quality (QUAL), and polymorphism, while recalculating INFO tags (`bcftools +fill-tags`). Outputs distinct `.snps.vcf` and `.indels.vcf` files.
@@ -60,10 +59,16 @@ By default, **PopFun** performs the following steps:
 1. Install [Nextflow](https://www.nextflow.io/docs/latest/getstarted.html#installation) (>=22.10.1).
 2. Install [Conda](https://docs.conda.io/en/latest/), [Docker](https://docs.docker.com/engine/installation/), or [Singularity/Apptainer](https://sylabs.io/guides/3.0/user-guide/).
     * Note: Apptainer is only supported from Nextflow version 22.11.0-edge and later.
-3. Create a `samplesheet.csv` with your input data.
-     * Note: Rows with the exact same `sample` ID but different `library` IDs will be automatically merged post-alignment.
-     * Optional: Populate the `pop` column with population/group labels. This is used by the population genetics module to color PCA markers and phylogenetic tree nodes.
-     * Optional: Populate the `bam` column when running with `--start_at call`. Each row must provide a BAM path in that mode. Rows sharing the same `sample` ID will still be merged before duplicate marking, so both per-library and per-sample BAM inputs are accepted. If a sidecar index (`.bam.bai` or `.bai`) is missing next to an input BAM, PopFun will generate one automatically before merging.
+3. Test the pipeline with:
+
+   ```bash
+        mkdir popfun_test
+        cd popfun_test
+        nextflow run <path_of_popfun>/main.nf \
+        -profile test,conda
+    ```
+
+4. Create a `samplesheet.csv` with your input data (see more details in [Inputs & References](#inputs--references) below)
 
     ```csv
         sample,library,fq1,fq2,pop,bam
@@ -81,10 +86,10 @@ By default, **PopFun** performs the following steps:
         FungusB,Lib1,,,Pop_2,data/B_merged.sorted.bam
     ```
 
-4. Run the pipeline:
+5. Run the pipeline:
 
     ```bash
-        nextflow run main.nf \
+        nextflow run <path_of_popfun>/main.nf \
             -profile conda \
             --input samplesheet.csv \
             --ref data/reference.fa \
@@ -95,12 +100,12 @@ By default, **PopFun** performs the following steps:
 
 ## Advanced Usage
 
-PopFun allows you to bypass expensive indexing steps by providing pre-built directories, and allows fine-grained control over tool arguments.
+PopFun allows you to bypass expensive steps, such as indexing and alignment, by providing pre-built index directories, or using pre-aligned `bam` files as input, and allows fine-grained control over workflow logic and tool arguments (see details in the [Usage Notes](#key-parameters-and-usage-notes) section below).
 
 **Example: Providing pre-built indices, annotations, and custom trimming arguments:**
 
 ```bash
-    nextflow run main.nf \
+    nextflow run <path_of_popfun>/main.nf \
         -profile docker \
         --input samplesheet.csv \
         --ref data/reference.fa \
@@ -111,65 +116,82 @@ PopFun allows you to bypass expensive indexing steps by providing pre-built dire
         --error_estimate true
 ```
 
-### Key Parameters
+### Key Parameters and Usage Notes
 
-**Inputs & References:**
+#### Inputs & References
 
+* `--input`: Path to `samplesheet.csv`, see example in [Quick Start](#quick-start).
+     - Note: Rows with the exact same `sample` ID but different `library` IDs will be automatically merged post-alignment.
+     - Optional: Populate the `pop` column with population/group labels. This is used by the population genetics module to color PCA markers and phylogenetic tree nodes.
+     - Optional: Populate the `bam` column when running with `--start_at call`. Each row must provide a BAM path in that mode. Rows sharing the same `sample` ID will still be merged before duplicate marking, so both per-library and per-sample BAM inputs are accepted. If a sidecar index (`.bam.bai` or `.bai`) is missing next to an input BAM, PopFun will generate one automatically before merging.
 * `--ref`: Path to reference FASTA.
+* `--outdir`: Output directory for pipeline results (Default: `results`).
 * `--annotation`: (Optional) Path to `.gff`, `.gff3`, or `.bed` for targeted Qualimap QC.
 * `--bwa_index`: (Optional) Path to pre-built BWA-mem2 index directory.
 * `--bowtie2_index`: (Optional) Path to pre-built Bowtie2 index directory.
 
-**Tool Selection & Logic:**
+#### Tool Selection & Workflow Logic
 
-* `--trimmer`: `fastp` (default) or `trimmomatic`
-* `--aligner`: `bwa-mem2` (default) or `bowtie2`
-* `--caller`: `freebayes` (default), `gatk`, or `ensemble`
-* `--error_estimate_caller`: Caller used for the optional per-library error-estimation branch: `freebayes` or `gatk`. By default this follows `--caller`, except `--caller ensemble` defaults to `freebayes` for error estimation.
-* `--markdup_tool`: `bamsormadup` (default), `gatk`, `sambamba`, or `fastdup`
 * `--start_at`: `qc` (default), `alignment`, or `call`. With `--start_at call`, the samplesheet must include a `bam` column and duplicate marking still runs before variant calling. Input BAMs are auto-indexed when a matching sidecar index is not present.
-* `--stop_at`: Final pipeline stage to execute: `qc`, `alignment`, `call`, `filter`, or `multiqc` (default). Use this to stop after an intermediate stage without running the remaining downstream steps.
-* `--freebayes_mode`: `population` (default) or `individual`
-* `--freebayes_region_splitter`: Region splitting strategy for Freebayes fan-out: `coverage` (default, coverage-balanced chunks derived from alignment depth) or `fai` (fixed-size chunks from the FASTA index).
-* `--freebayes_chunk_size`: Chunk size passed to `fasta_generate_regions.py` for splitting genomic regions in Freebayes population-mode. (Default: `100000`).
-* `--freebayes_coverage_tool`: Coverage tool used when `--freebayes_region_splitter coverage` is selected: `mosdepth` (default) or `sambamba`.
-* `--freebayes_coverage_regions`: Target number of coverage-balanced regions to generate when `--freebayes_region_splitter coverage` is used. (Default: `500`).
-* `--freebayes_max_chunks`: Maximum number of generated Freebayes target regions allowed in the largest per-chromosome region file before the workflow aborts and asks for coarser chunking. (Default: `2000`).
-* `--freebayes_debug`: Save Freebayes per-region TSV timing diagnostics when `true`. (Default: `false`).
-* `--ensemble_matcher`: Matching engine used when `--caller ensemble`: `bcftools` (default) or `rtg`.
-* `--caller ensemble` currently uses strict intersection of filtered, reference-normalized (`bcftools norm -f`) GATK and Freebayes population calls, keeping the higher-QUAL record at each shared site. With `--ensemble_matcher rtg`, matching is derived from `rtg vcfeval` true-positive outputs before the same higher-QUAL selection step.
-* `--error_estimate`: `false` (default) or `true`
+* `--stop_at`: Final pipeline stage to execute: `qc`, `alignment`, `call`, `filter`, or `multiqc` (default). Use this to stop after an intermediate stage without running the remaining downstream steps. 
+* `--trimmer`: `fastp` (default) or `trimmomatic` (which will then use FastQC for QC).
+* `--aligner`: `bwa-mem2` (default) or `bowtie2`.
+* `--markdup_tool`: `bamsormadup` (default), `gatk`, `sambamba`, or `fastdup`.
+* `--save_bams` controls which BAM files are published to `results/aligned`: `none` (default) publishes no BAMs, `merged` publishes only merged BAMs under `results/aligned/merged`, and `all` publishes both individual aligned BAM/BAI pairs under `results/aligned/ind` and merged BAMs under `results/aligned/merged`.
+* `--caller`: `freebayes` (default), `gatk`, or `ensemble`.
+* `--error_estimate`: `false` (default) or `true`.
+* `--error_estimate_caller`: Caller used for the optional per-library error-estimation branch: `freebayes` or `gatk`. By default this follows `--caller`, except `--caller ensemble` defaults to `freebayes` for error estimation.
 * `--popgen`: Run population genetics module (PCA + phylogenetic tree) from final cohort VCF and add to MultiQC (Default: `false`).
-* `--popgen_tree_method`: Tree construction method for population genetics (`upgma`, `nj`, `ml`, or `bayesian`, Default: `upgma`).
-* `--popgen_legend_order`: Population legend order for PCA/tree (`samplesheet` or `alphabetical`, Default: `samplesheet`).
+* `--publish_dir_mode`: Nextflow publish mode used for result files (Default: `copy`). See the [Nextflow documentation](https://docs.seqera.io/nextflow/reference/process#mode) for other options.
 
-**Tool Arguments & Parameters:**
+#### Tool-Specific Arguments
 
-* `--ploidy`: Expected sample ploidy used by variant callers (Default: `2`, required for masking heterozygote genotypes, see `--mask_hetero` flag below). Set to `1` for true haploid genomes, or higher values for polyploid organisms.
 * `--fastp_args`: Additional arguments passed to Fastp (Default: empty).
 * `--trimmomatic_args`: Additional arguments passed to Trimmomatic (Default: `ILLUMINACLIP:TruSeq3-PE.fa:2:30:10 LEADING:3 TRAILING:3 SLIDINGWINDOW:4:15 MINLEN:36`).
 * `--bwa_args`: Additional arguments passed to BWA-mem2 (Default: empty).
 * `--bowtie2_args`: Additional arguments passed to Bowtie2 (Default: empty).
 * `--gatk_args`: Additional arguments passed to GATK HaplotypeCaller (Default: empty).
-* `--freebayes_args`: Additional arguments passed to Freebayes (Default: `--genotype-qualities --use-best-n-alleles 4`). Keep `--genotype-qualities` enabled so `GQ` fields are emitted for downstream genotype-based filtering. The default `--use-best-n-alleles 4` acts as a conservative runtime guard in low-complexity or ultra-high-coverage regions. In population mode, these arguments are forwarded to each chromosome-level Freebayes region fan-out task. Additional upstream tuning options are documented in the [Freebayes performance tuning guide](https://github.com/freebayes/freebayes?tab=readme-ov-file#performance-tuning).
-* Caller parallelism inside `FREEBAYES`, `FREEBAYES_POPULATION`, `FREEBAYES_CALL_LIB`, and `GATK_HAPLOTYPECALLER` now uses the full `task.cpus` allocation for each process.
+* `--freebayes_args`: Additional arguments passed to Freebayes (Default: `--genotype-qualities --use-best-n-alleles 4`). Keep `--genotype-qualities` enabled so `GQ` fields are emitted for downstream genotype-based filtering. The default `--use-best-n-alleles 4` acts as a conservative runtime guard in low-complexity or ultra-high-coverage regions. In population mode, these arguments are forwarded to each chromosome-level Freebayes region fan-out task. Additional upstream tuning options are documented in the [Freebayes performance tuning guide](https://github.com/freebayes/freebayes?tab=readme-ov-file#performance-tuning). See more Freebayes options in the [Freebayes Parameters](#freebayes-parameters) section below.
 
-**Variant Calling Notes:**
+#### Variant Calling
 
-* `--freebayes_region_splitter coverage` vendors the upstream Freebayes `coverage_to_regions.py` helper in `bin/`. The default `mosdepth` backend uses `quay.io/biocontainers/mosdepth:0.3.14--h05c3d44_0` with a small adapter that converts mosdepth interval output into the coverage stream expected by the vendored Freebayes helper. The `sambamba` backend uses `quay.io/biocontainers/sambamba:1.0.1--h6f6fda4_1` to generate coverage directly.
+* `--ploidy`: Expected sample ploidy used by variant callers (Default: `2`, required for masking heterozygote genotypes, see `--mask_hetero` flag in the [VCF filtering](#vcf-filtering) section below). Set to `1` for true haploid genomes, or higher values for polyploid organisms.
+
+##### Freebayes Parameters
+
+* `--freebayes_mode`: `population` (default) or `individual`.
+* `--freebayes_region_splitter`: Region splitting strategy for Freebayes fan-out: `coverage` (default, coverage-balanced chunks derived from alignment depth) or `fai` (fixed-size chunks from the FASTA index).
+* `--freebayes_chunk_size`: Chunk size passed to `fasta_generate_regions.py` for splitting genomic regions in Freebayes population-mode. (Default: `100000`).
+* `--freebayes_coverage_tool`: Coverage tool used when `--freebayes_region_splitter coverage` is selected: `mosdepth` (default) or `sambamba`.
+* `--freebayes_coverage_regions`: Target number of coverage-balanced regions to generate when `--freebayes_region_splitter coverage` is used. (Default: `500`).
+* `--freebayes_max_chunks`: Maximum number of generated Freebayes target regions allowed in the largest per-chromosome region file before the workflow aborts and asks for coarser chunking. (Default: `2000`).
 * Chunk-size tuning depends on how regions are generated. With `--freebayes_region_splitter coverage`, lower `--freebayes_coverage_regions` values produce coarser fan-out and higher values produce finer fan-out. With `--freebayes_region_splitter fai`, appropriate `--freebayes_chunk_size` values depend more on genome size and continuity; highly fragmented assemblies with thousands of contigs often work better with `coverage` splitting than with `fai` splitting.
 * If Freebayes region generation exceeds `--freebayes_max_chunks` (default: 2000) in the largest per-chromosome region file, PopFun aborts before fan-out and asks you to lower `--freebayes_coverage_regions` or increase `--freebayes_chunk_size`, depending on the selected splitter.
+* `--freebayes_debug`: Save Freebayes per-region TSV timing diagnostics when `true` (Default: `false`). 
 * When `--freebayes_debug true` is enabled, each Freebayes task writes `.freebayes_diagnostics` debug files containing a `region_runtime.tsv` timing table and a `slowest_regions.tsv` summary of the longest-running regions. These tables include an absolute chunk `vcf_path` for each chunk. These files are skipped by default.
+
+##### Ensemble Caller
+
+* `--ensemble_matcher`: Matching engine used when `--caller ensemble`: `bcftools` (default) or `rtg`.
+* `--caller ensemble` currently uses strict intersection of filtered, reference-normalized (`bcftools norm -f`) GATK and Freebayes population calls, keeping the higher-QUAL record at each shared site. With `--ensemble_matcher rtg`, matching is derived from `rtg vcfeval` true-positive outputs before the same higher-QUAL selection step.
 * `--caller ensemble` currently requires `--freebayes_mode population`. When `--error_estimate true` is also enabled, the error-estimation branch defaults to `--error_estimate_caller freebayes`; override this with `--error_estimate_caller gatk` if you want GATK-based per-library error estimation instead.
 
-**VCF Filtering:**
+##### VCF Filtering
 
 Note: Genotype-based filtering relies on valid `GQ` fields. By default, PopFun enables Freebayes `--genotype-qualities` (via `--freebayes_args`) so genotype qualities are emitted and filtering behaves as expected.
 
-* `--filter_qual`: Minimum QUAL score (Default: `30`)
-* `--filter_min_dp`: Minimum Depth (Default: `10`)
+* `--filter_qual`: Minimum loci QUAL score (Default: `30`)
+* `--filter_min_dp`: Minimum loci Depth (Default: `10`)
+* `--filter_max_dp`: Maximum loci Depth (Default: `100000`)
 * `--filter_ind_dp`: Minimum individual genotype depth (Default: `7`)
 * `--mask_hetero`: Mask heterozygous genotypes (`GT=='het'`) during filtering (Default: `true`). Requires diploid variant calling (`--ploidy 2`).
+
+#### PopGen Options
+
+* `--popgen_tree_method`: Tree construction method for population genetics (`upgma`, `nj`, `ml`, or `bayesian`, Default: `upgma`).
+* `--popgen_legend_order`: Population legend order for PCA/tree (`samplesheet` or `alphabetical`, Default: `samplesheet`).
+
+Note: The pipeline performs very basic population genetics analysis (PCA and phylogeny). For a more comprehensive analysis, it is recommended to use the resulting VCF files in a dedicated workflow, such as [scalepopgen](https://github.com/Popgen48/scalepopgen).
 
 ## Output Directory Structure
 
