@@ -18,7 +18,7 @@
 
 ## Introduction
 
-**PopFun** (Population Fungal Variant Calling) is a highly scalable bioinformatics pipeline for identifying single nucleotide polymorphisms (SNPs) and insertions/deletions (Indels) from whole-genome sequencing (WGS) data of clonal fungal isolate collections and related population-scale cohorts.
+**PopFun** (Population Fungal Variant Calling) is a highly scalable bioinformatics pipeline for identifying single nucleotide polymorphisms (SNPs) and insertions/deletions (Indels) from whole-genome sequencing (WGS) data of fungal isolate collections and related population-scale cohorts.
 
 Built using Nextflow DSL2 and strictly adhering to nf-core data structures (including meta maps), PopFun bridges the gap between raw sequencing reads and high-quality, filtered variant calls. It is highly parameterized, automatically handles missing reference indices, and includes a parallel track for estimating error rates across replicate libraries of the same samples.
 
@@ -191,7 +191,7 @@ Note: Genotype-based filtering relies on valid `GQ` fields. By default, PopFun e
 * `--popgen_tree_method`: Tree construction method for population genetics (`upgma`, `nj`, `ml`, or `bayesian`, Default: `upgma`).
 * `--popgen_legend_order`: Population legend order for PCA/tree (`samplesheet` or `alphabetical`, Default: `samplesheet`).
 
-Note: The pipeline performs very basic population genetics analysis (PCA and phylogeny). For a more comprehensive analysis, it is recommended to use the resulting VCF files in a dedicated workflow, such as [scalepopgen](https://github.com/Popgen48/scalepopgen).
+Note: The pipeline performs very basic population genetics analysis (PCA and phylogeny). For a more comprehensive analysis, it is recommended to use the resulting VCF files in a dedicated workflow, such as [scalepopgen](https://github.com/Popgen48/scalepopgen), or the R packages [tidypopgen](https://evolecolgroup.github.io/tidypopgen) and [adegenet](https://github.com/thibautjombart/adegenet)/[poppr](https://grunwaldlab.github.io/poppr/) (which have fantastic documentation in the [Population genetics and genomics in R](https://grunwaldlab.github.io/Population_Genetics_in_R/) primer).
 
 ## Output Directory Structure
 
