@@ -1,5 +1,24 @@
 // Save as: modules/local/aligners.nf
 
+def canonicalSampleLibraryId = { meta ->
+    def sampleId = meta.id?.toString()?.trim()
+    def libraryId = meta.library?.toString()?.trim()
+    def collapsedSampleId = sampleId
+
+    if (sampleId) {
+        def repeatedSampleMatcher = (sampleId =~ /^(.*)_\1$/)
+        if (repeatedSampleMatcher.matches()) {
+            collapsedSampleId = repeatedSampleMatcher[0][1]
+        }
+    }
+
+    def sampleLibraryId = (collapsedSampleId && libraryId)
+        ? (collapsedSampleId.endsWith("_${libraryId}") ? collapsedSampleId : "${collapsedSampleId}_${libraryId}")
+        : (meta.unit_id ?: meta.library ?: meta.id).toString()
+
+    return sampleLibraryId.replaceAll(/[^A-Za-z0-9._-]+/, '_')
+}
+
 process BWA_ALIGN {
     tag "${meta.unit_id ?: meta.library ?: meta.id}"
     label 'mc_large'
@@ -15,7 +34,7 @@ process BWA_ALIGN {
     
     script:
     def args = task.ext.args ?: ''
-    def unitId = meta.unit_id ?: meta.library ?: meta.id
+    def unitId = canonicalSampleLibraryId(meta)
     def rg = "@RG\\tID:${meta.id}.${unitId}\\tSM:${meta.id}\\tLB:${unitId}\\tPL:ILLUMINA"
     """
     bwa-mem2 mem -t ${task.cpus} -R '$rg' $args "${index_dir}/${prefix}" "$read1" "$read2" > "${unitId}.sam"
@@ -37,7 +56,7 @@ process BOWTIE2_ALIGN {
 
     script:
     def args = task.ext.args ?: ''
-    def unitId = meta.unit_id ?: meta.library ?: meta.id
+    def unitId = canonicalSampleLibraryId(meta)
     """
     bowtie2 -x "${index_dir}/${prefix}" -1 "$read1" -2 "$read2" -p ${task.cpus} $args \\
         --rg-id ${meta.id}.${unitId} --rg SM:${meta.id} --rg LB:${unitId} --rg PL:ILLUMINA > "${unitId}.sam"
@@ -58,7 +77,7 @@ process SAMTOOLS_SORT_ALIGN {
         tuple val(meta), path("*.sorted.bam.bai"), emit: bai
 
     script:
-    def unitId = meta.unit_id ?: meta.library ?: meta.id
+    def unitId = canonicalSampleLibraryId(meta)
     """
     samtools sort -@ ${task.cpus} -o "${unitId}.sorted.bam" "$sam"
     samtools index -@ ${task.cpus} "${unitId}.sorted.bam"

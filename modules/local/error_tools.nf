@@ -1,5 +1,24 @@
 // Save as: modules/local/error_tools.nf
 
+def canonicalSampleLibraryId = { meta ->
+    def sampleId = meta.id?.toString()?.trim()
+    def libraryId = meta.library?.toString()?.trim()
+    def collapsedSampleId = sampleId
+
+    if (sampleId) {
+        def repeatedSampleMatcher = (sampleId =~ /^(.*)_\1$/)
+        if (repeatedSampleMatcher.matches()) {
+            collapsedSampleId = repeatedSampleMatcher[0][1]
+        }
+    }
+
+    def sampleLibraryId = (collapsedSampleId && libraryId)
+        ? (collapsedSampleId.endsWith("_${libraryId}") ? collapsedSampleId : "${collapsedSampleId}_${libraryId}")
+        : (meta.unit_id ?: meta.library ?: meta.id).toString()
+
+    return sampleLibraryId.replaceAll(/[^A-Za-z0-9._-]+/, '_')
+}
+
 process MARK_DUPLICATES_LIB {
     tag "${meta.unit_id ?: meta.library ?: meta.id}"
     label 'sc_medium'
@@ -14,7 +33,7 @@ process MARK_DUPLICATES_LIB {
     path "*.metrics.txt", emit: metrics
 
     script:
-    def unitId = meta.unit_id ?: meta.library ?: meta.id
+    def unitId = canonicalSampleLibraryId(meta)
     """
     gatk MarkDuplicates \\
         -I "$bam" \\
@@ -39,7 +58,7 @@ process MARK_DUPLICATES_LIB_BAMSORMADUP {
     path "*.metrics.txt", emit: metrics
 
     script:
-    def unitId = meta.unit_id ?: meta.library ?: meta.id
+    def unitId = canonicalSampleLibraryId(meta)
     """
     bamcollate2 inputformat=bam outputformat=bam level=1 < "$bam" | \
     bamsormadup SO=coordinate inputformat=bam level=1 threads=${task.cpus} M="${unitId}.metrics.txt" > "${unitId}.dedup.bam"
@@ -61,7 +80,7 @@ process MARK_DUPLICATES_LIB_SAMBAMBA {
     path "*.sambamba_markdup.log", emit: metrics
 
     script:
-    def unitId = meta.unit_id ?: meta.library ?: meta.id
+    def unitId = canonicalSampleLibraryId(meta)
     """
     sambamba markdup -t ${task.cpus} "$bam" "${unitId}.dedup.bam" 2> "${unitId}.sambamba_markdup.log"
     sambamba index -t ${task.cpus} "${unitId}.dedup.bam" "${unitId}.dedup.bai"
@@ -82,7 +101,7 @@ process MARK_DUPLICATES_LIB_FASTDUP {
     path "*.metrics.txt", emit: metrics
 
     script:
-    def unitId = meta.unit_id ?: meta.library ?: meta.id
+    def unitId = canonicalSampleLibraryId(meta)
     """
     fastdup --input "$bam" --output "${unitId}.dedup.bam" --metrics "${unitId}.metrics.txt" --num-threads ${task.cpus}
     samtools index -@ ${task.cpus} "${unitId}.dedup.bam" "${unitId}.dedup.bai"
@@ -106,7 +125,7 @@ process GATK_CALL_LIB {
     tuple val(meta), path("*.vcf.gz"), path("*.vcf.gz.tbi"), emit: vcf
 
     script:
-    def unitId = meta.unit_id ?: meta.library ?: meta.id
+    def unitId = canonicalSampleLibraryId(meta)
     """
     gatk --java-options "-Xmx${task.memory.toGiga()}g" HaplotypeCaller \\
         -R "$ref" \\
@@ -129,12 +148,12 @@ process FREEBAYES_CALL_LIB {
 
     output:
     tuple val(meta), path("*.vcf.gz"), path("*.vcf.gz.tbi"), emit: vcf
-    path "${meta.unit_id ?: meta.library ?: meta.id}.freebayes_diagnostics/*.tsv", optional: true, emit: diagnostics
+    path "*.freebayes_diagnostics/*.tsv", optional: true, emit: diagnostics
 
     script:
     def args = task.ext.args ?: ''
     def threads = Math.max(1, (task.cpus ?: 1) as Integer)
-    def unitId = meta.unit_id ?: meta.library ?: meta.id
+    def unitId = canonicalSampleLibraryId(meta)
     def diagnosticsDir = "${unitId}.freebayes_diagnostics"
     def debugEnabled = params.freebayes_debug ? 'true' : 'false'
     """

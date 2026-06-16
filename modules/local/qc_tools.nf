@@ -1,5 +1,24 @@
 // Save as: modules/local/qc_tools.nf
 
+def canonicalSampleLibraryId = { meta ->
+    def sampleId = meta.id?.toString()?.trim()
+    def libraryId = meta.library?.toString()?.trim()
+    def collapsedSampleId = sampleId
+
+    if (sampleId) {
+        def repeatedSampleMatcher = (sampleId =~ /^(.*)_\1$/)
+        if (repeatedSampleMatcher.matches()) {
+            collapsedSampleId = repeatedSampleMatcher[0][1]
+        }
+    }
+
+    def sampleLibraryId = (collapsedSampleId && libraryId)
+        ? (collapsedSampleId.endsWith("_${libraryId}") ? collapsedSampleId : "${collapsedSampleId}_${libraryId}")
+        : (meta.unit_id ?: meta.library ?: meta.id).toString()
+
+    return sampleLibraryId.replaceAll(/[^A-Za-z0-9._-]+/, '_')
+}
+
 process FASTP {
     tag "${meta.unit_id ?: meta.library ?: meta.id}"
     label 'mc_medium'
@@ -14,7 +33,7 @@ process FASTP {
         path "*.html", emit: html
     script:
     def args = task.ext.args ?: ''
-    def reportId = (meta.unit_id ?: meta.library ?: meta.id).replaceAll(/[^A-Za-z0-9._-]+/, '_')
+    def reportId = canonicalSampleLibraryId(meta)
     """
     fastp --in1 "$read1" --in2 "$read2" --out1 "${reportId}_1.fastp.fq.gz" --out2 "${reportId}_2.fastp.fq.gz" --json "${reportId}.fastp.json" --html "${reportId}.fastp.html" --thread ${task.cpus} $args
     """
@@ -50,7 +69,7 @@ process TRIMMOMATIC {
         
     script:
     def args = task.ext.args ?: ''
-    def unitId = meta.unit_id ?: meta.library ?: meta.id
+    def unitId = canonicalSampleLibraryId(meta)
     """
     trimmomatic PE -threads ${task.cpus} \\
     "$read1" "$read2" \
