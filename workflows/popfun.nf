@@ -8,6 +8,7 @@ include { FREEBAYES_POPULATION; FREEBAYES; GATK_HAPLOTYPECALLER; GATK_COMBINEGVC
 include { BCFTOOLS_MERGE; BCFTOOLS_CONCAT; VCF_ENSEMBLE_COMBINE; VCF_ENSEMBLE_NORMALIZE; VCF_ENSEMBLE_MATCH_RTG; VCF_ENSEMBLE_ASSEMBLE } from '../modules/local/vcf_tools'
 include { GENERATE_SOFTWARE_VERSIONS_MQC; MULTIQC } from '../modules/local/multiqc'
 include { POPGEN_ANALYSES } from '../modules/local/popgen'
+include { SOURMASH_SKETCH; SOURMASH_COMPARE; KAT_HIST; KAT_GCP } from '../modules/local/kmer'
 include { MARK_DUPLICATES_LIB; MARK_DUPLICATES_LIB_BAMSORMADUP; MARK_DUPLICATES_LIB_SAMBAMBA; MARK_DUPLICATES_LIB_FASTDUP; GATK_CALL_LIB; FREEBAYES_CALL_LIB; VCF_MULTI_COMPARE as VCF_MULTI_COMPARE_RAW; VCF_MULTI_COMPARE as VCF_MULTI_COMPARE_FILTERED; VCF_DISCORDANCE_MQC } from '../modules/local/error_tools'
 include { VCF_FILTER as VCF_FILTER_LIB; VCF_FILTER as VCF_FILTER_FINAL; VCF_FILTER as VCF_FILTER_ENS_GATK; VCF_FILTER as VCF_FILTER_ENS_FB } from '../modules/local/vcf_filter'
 include { BCFTOOLS_STATS as BCFTOOLS_STATS_RAW; BCFTOOLS_STATS as BCFTOOLS_STATS_FILTERED } from '../modules/local/vcf_tools'
@@ -15,9 +16,9 @@ include { BCFTOOLS_STATS as BCFTOOLS_STATS_RAW; BCFTOOLS_STATS as BCFTOOLS_STATS
 workflow POPFUN {
     ch_multiqc_reports = Channel.empty()
 
-    def step_order = [qc: 1, alignment: 2, call: 3, filter: 4, multiqc: 5]
+    def step_order = [qc: 1, alignment: 2, call: 3, filter: 4, popgen: 5]
     def valid_start_steps = ['qc', 'alignment', 'call']
-    def valid_stop_steps = ['qc', 'alignment', 'call', 'filter', 'multiqc']
+    def valid_stop_steps = ['qc', 'alignment', 'call', 'filter', 'popgen']
     def valid_markdup_tools = ['gatk', 'bamsormadup', 'sambamba', 'fastdup']
     def valid_callers = ['freebayes', 'gatk', 'ensemble']
     def valid_ensemble_matchers = ['bcftools', 'rtg']
@@ -61,6 +62,9 @@ workflow POPFUN {
     }
     if (!valid_freebayes_coverage_tools.contains(params.freebayes_coverage_tool)) {
         error "Invalid --freebayes_coverage_tool '${params.freebayes_coverage_tool}'. Supported values: ${valid_freebayes_coverage_tools.join(', ')}"
+    }
+    if (params.kmer_analysis && params.start_at == 'call') {
+        error "--kmer_analysis currently requires reads, so it cannot be used with --start_at call"
     }
     if (params.caller == 'ensemble' && params.freebayes_mode != 'population') {
         error "--caller ensemble currently requires --freebayes_mode population"
@@ -226,6 +230,21 @@ workflow POPFUN {
     ch_popgen_script = Channel.value(file("$projectDir/bin/popgen_analyses.py"))
     ch_freebayes_coverage_split_script = Channel.value(file("$projectDir/bin/coverage_to_regions.py"))
     ch_freebayes_mosdepth_coverage_script = Channel.value(file("$projectDir/bin/mosdepth_intervals_to_coverage.py"))
+    def finalizeWithMultiqc = { reportsChannel ->
+        GENERATE_SOFTWARE_VERSIONS_MQC(
+            Channel.value(params.trimmer),
+            Channel.value(params.aligner),
+            Channel.value(params.caller),
+            Channel.value(params.markdup_tool),
+            Channel.value(params.annotation),
+            Channel.value(params.popgen)
+        )
+
+        def finalReports = reportsChannel.mix(GENERATE_SOFTWARE_VERSIONS_MQC.out.versions)
+
+        // Pass config and logo so both are staged in the work directory
+        MULTIQC(finalReports.collect(), ch_multiqc_config, ch_multiqc_logo)
+    }
 
     // --- STEP 1: QC ---
     if (params.start_at == 'qc') {
@@ -246,7 +265,22 @@ workflow POPFUN {
         ch_reads = ch_input
     }
 
-    if (params.stop_at == 'qc') { return }
+    if (params.kmer_analysis) {
+        SOURMASH_SKETCH(ch_reads)
+        KAT_HIST(ch_reads)
+        KAT_GCP(ch_reads)
+
+        SOURMASH_COMPARE(SOURMASH_SKETCH.out.signature.map { meta, sig -> sig }.collect())
+
+        ch_multiqc_reports = ch_multiqc_reports.mix(KAT_HIST.out.hist.flatten())
+        ch_multiqc_reports = ch_multiqc_reports.mix(KAT_GCP.out.gcp.flatten())
+        ch_multiqc_reports = ch_multiqc_reports.mix(SOURMASH_COMPARE.out.compare.flatten())
+    }
+
+    if (params.stop_at == 'qc') {
+        finalizeWithMultiqc(ch_multiqc_reports)
+        return
+    }
 
     // 2. PREPARE GENOME INDICES
     if (ref_is_gz) {
@@ -423,7 +457,10 @@ workflow POPFUN {
     // Note: Use .results if your module emits tuple(meta, dir), or .report if it emits path(dir)
     ch_multiqc_reports = ch_multiqc_reports.mix(QUALIMAP.out.results.map { meta, dir -> dir })
 
-    if (params.stop_at == 'alignment') { return }
+    if (params.stop_at == 'alignment') {
+        finalizeWithMultiqc(ch_multiqc_reports)
+        return
+    }
 
     // --- STEP 3: VARIANT CALLING ---
     ch_final_vcf = Channel.empty()
@@ -715,7 +752,10 @@ workflow POPFUN {
         ch_final_vcf = BCFTOOLS_MERGE.out.vcf.map { vcf -> tuple([id: "merged"], vcf) }
     }
 
-    if (params.stop_at == 'call') { return }
+    if (params.stop_at == 'call') {
+        finalizeWithMultiqc(ch_multiqc_reports)
+        return
+    }
 
     // --- STEP 4: FILTERING & METRICS ---
     BCFTOOLS_STATS_RAW(ch_final_vcf)
@@ -731,7 +771,10 @@ workflow POPFUN {
     BCFTOOLS_STATS_FILTERED(ch_filtered_vcf)
     ch_multiqc_reports = ch_multiqc_reports.mix(BCFTOOLS_STATS_FILTERED.out.stats)
 
-    if (params.stop_at == 'filter') { return }
+    if (params.stop_at == 'filter') {
+        finalizeWithMultiqc(ch_multiqc_reports)
+        return
+    }
     // --- STEP 5: POPULATION GENETICS ---
     if (params.popgen) {
         ch_filtered_vcf_for_popgen = ch_filter_out
@@ -747,21 +790,12 @@ workflow POPFUN {
         ch_multiqc_reports = ch_multiqc_reports.mix(POPGEN_ANALYSES.out.pca_mqc)
         ch_multiqc_reports = ch_multiqc_reports.mix(POPGEN_ANALYSES.out.tree_mqc)
     }
-    if (params.stop_at == 'popgen') { return }
+    if (params.stop_at == 'popgen') {
+        finalizeWithMultiqc(ch_multiqc_reports)
+        return
+    }
     // --- FINAL STEP: MULTIQC ---
 
-    GENERATE_SOFTWARE_VERSIONS_MQC(
-        Channel.value(params.trimmer),
-        Channel.value(params.aligner),
-        Channel.value(params.caller),
-        Channel.value(params.markdup_tool),
-        Channel.value(params.annotation),
-        Channel.value(params.popgen)
-    )
-
-    ch_multiqc_reports = ch_multiqc_reports.mix(GENERATE_SOFTWARE_VERSIONS_MQC.out.versions)
-    
-    // Pass config and logo so both are staged in the work directory
-    MULTIQC(ch_multiqc_reports.collect(), ch_multiqc_config, ch_multiqc_logo)
+    finalizeWithMultiqc(ch_multiqc_reports)
 
 }

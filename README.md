@@ -39,20 +39,21 @@ By default, **PopFun** performs the following steps:
 
 1. **Reference Preparation**: Automatically decompresses the reference (if provided as `.fasta.gz`) and generates missing `.fai`, `.dict`, and aligner index directories (`bwa-mem2` or `bowtie2`) if not provided by the user.
 2. **Read QC & Trimming**: `fastp` (default) OR `Trimmomatic` (with `FastQC`).
-3. **Read Alignment**: `bwa-mem2` (default) or `bowtie2`.
-4. **BAM Processing**:
+3. **Experimental K-mer Analysis (Optional)**: If `--kmer_analysis true`, PopFun sketches the QC-filtered reads with `sourmash`, compares isolate signatures to summarize nucleotide/genetic diversity, and runs `kat` histogram/GC-bias analyses for genome-size, ploidy, and contamination screening.
+4. **Read Alignment**: `bwa-mem2` (default) or `bowtie2`.
+5. **BAM Processing**:
     * Merges multiple libraries belonging to the same sample (`samtools`).
     * Marks optical/PCR duplicates (`bamsormadup` by default, with optional `GATK MarkDuplicates`, `sambamba`, or `FastDup`).
-5. **Alignment QC**: `Qualimap` (Supports optional `.gff`/`.bed` annotations for targeted region metrics).
-6. **Variant Calling**: `Freebayes` (Population mode default), `GATK HaplotypeCaller`, or an `ensemble` intersection of both callers.
+6. **Alignment QC**: `Qualimap` (Supports optional `.gff`/`.bed` annotations for targeted region metrics).
+7. **Variant Calling**: `Freebayes` (Population mode default), `GATK HaplotypeCaller`, or an `ensemble` intersection of both callers.
     * Supports Freebayes population-level calling, or individual sample calling + merging.
     * Population mode can split chromosomes into multiple sub-regions for finer internal Freebayes region fan-out using either fixed-size FASTA chunks or BAI data-aware regioning.
     * After global region generation, per-chromosome region files are produced so each population shard remains chromosome-scoped for concatenation.
     * `--caller ensemble` runs both GATK and Freebayes population calling, filters each caller VCF first, then combines only shared REF/ALT calls after reference-aware normalization (`bcftools norm -f`). At each shared site, it retains the higher-QUAL representation and reports raw caller VCFs in the results directory.
-7. **Error Estimation (Optional)**: If `--error_estimate true` is flagged, the pipeline automatically separates replicate libraries, calls variants on them independently, and calculates genotype discordance rates using a custom Python module. The raw per-library VCFs used in this comparison are also retained in `results/variants/error_estimate_libraries/`.
-8. **Population Genetics (Optional)**: If `--popgen true`, PopFun performs PCA (PC1-PC3) and constructs a phylogenetic tree from the final cohort VCF (regardless of variant caller and calling mode), then adds both panels to MultiQC. If a `pop` column is present in the samplesheet, it is used to color PCA markers and tree nodes.
-9. **Variant Filtering**: Strictly filters VCFs based on Depth (DP), Quality (QUAL), and polymorphism, while recalculating INFO tags (`bcftools +fill-tags`). Outputs distinct `.snps.vcf` and `.indels.vcf` files.
-10. **Final Reporting**: Aggregates QC metrics and software versions across all steps into a single HTML report (`MultiQC`).
+8. **Error Estimation (Optional)**: If `--error_estimate true` is flagged, the pipeline automatically separates replicate libraries, calls variants on them independently, and calculates genotype discordance rates using a custom Python module. The raw per-library VCFs used in this comparison are also retained in `results/variants/error_estimate_libraries/`.
+9. **Population Genetics (Optional)**: If `--popgen true`, PopFun performs PCA (PC1-PC3) and constructs a phylogenetic tree from the final cohort VCF (regardless of variant caller and calling mode), then adds both panels to MultiQC. If a `pop` column is present in the samplesheet, it is used to color PCA markers and tree nodes.
+10. **Variant Filtering**: Strictly filters VCFs based on Depth (DP), Quality (QUAL), and polymorphism, while recalculating INFO tags (`bcftools +fill-tags`). Outputs distinct `.snps.vcf` and `.indels.vcf` files.
+11. **Final Reporting**: Aggregates QC metrics and software versions across all steps into a single HTML report (`MultiQC`).
 
 ## Quick Start
 
@@ -133,10 +134,11 @@ PopFun allows you to bypass expensive steps, such as indexing and alignment, by 
 #### Tool Selection & Workflow Logic
 
 * `--start_at`: `qc` (default), `alignment`, or `call`. With `--start_at call`, the samplesheet must include a `bam` column and duplicate marking still runs before variant calling. Input BAMs are auto-indexed when a matching sidecar index is not present.
-* `--stop_at`: Final pipeline stage to execute: `qc`, `alignment`, `call`, `filter`, or `multiqc` (default). Use this to stop after an intermediate stage without running the remaining downstream steps. 
+* `--stop_at`: Final analysis stage to execute before the always-on final MultiQC aggregation: `qc`, `alignment`, `call`, `filter` (default), or `popgen`. For example, `--stop_at qc` runs QC plus MultiQC, while `--stop_at filter` runs through filtering plus MultiQC.
 * `--trimmer`: `fastp` (default) or `trimmomatic` (which will then use FastQC for QC).
 * `--aligner`: `bwa-mem2` (default) or `bowtie2`.
 * `--markdup_tool`: `bamsormadup` (default), `gatk`, `sambamba`, or `fastdup`.
+* `--kmer_analysis`: Enable the experimental k-mer QC branch using `sourmash` and `kat` (`false` by default). This branch requires read inputs, so it is not supported with `--start_at call`.
 * `--save_bams` controls which BAM files are published to `results/aligned`: `none` (default) publishes no BAMs, `merged` publishes only merged BAMs under `results/aligned/merged`, and `all` publishes both individual aligned BAM/BAI pairs under `results/aligned/ind` and merged BAMs under `results/aligned/merged`.
 * `--caller`: `freebayes` (default), `gatk`, or `ensemble`.
 * `--error_estimate`: `false` (default) or `true`.
@@ -148,6 +150,12 @@ PopFun allows you to bypass expensive steps, such as indexing and alignment, by 
 
 * `--fastp_args`: Additional arguments passed to Fastp (Default: empty).
 * `--trimmomatic_args`: Additional arguments passed to Trimmomatic (Default: `ILLUMINACLIP:TruSeq3-PE.fa:2:30:10 LEADING:3 TRAILING:3 SLIDINGWINDOW:4:15 MINLEN:36`).
+* `--kmer_sourmash_args`: Additional arguments passed to the sourmash sketch step (Default: empty).
+* `--kmer_sourmash_compare_args`: Additional arguments passed to the sourmash compare step (Default: empty).
+* `--kmer_kat_args`: Additional arguments passed to KAT hist/gcp (Default: empty).
+* `--kmer`: k-mer size used for both sourmash and KAT in the experimental k-mer branch (Default: `31`).
+* `--kmer_sourmash_k`: Legacy sourmash-only k-mer size override (Default: `31`). `--kmer` takes precedence when set.
+* `--kmer_sourmash_scaled`: Scaled downsampling factor used for sourmash sketching (Default: `1000`).
 * `--bwa_args`: Additional arguments passed to BWA-mem2 (Default: empty).
 * `--bowtie2_args`: Additional arguments passed to Bowtie2 (Default: empty).
 * `--gatk_args`: Additional arguments passed to GATK HaplotypeCaller (Default: empty).
@@ -205,6 +213,9 @@ Upon completion, the `--outdir` will contain the following structured directorie
     ├── error_estimates/      # CSV reports of replicate discordance rates
     ├── multiqc/              # Aggregated HTML QC report
     ├── population_genetics/  # PCA, phylogenetic tree, and intermediate population-genetics outputs
+    ├── qc/kmer/              # Experimental sourmash and kat read-level k-mer analyses
+    │   ├── kat/              # KAT hist/gcp outputs for genome-size, ploidy, and contamination checks
+    │   └── sourmash/         # Sourmash signatures, comparison matrix, and plots
     ├── qc/                   # Individual QC reports (Fastp, FastQC, Qualimap, BCFtools)
     └── variants/
         ├── error_estimate_libraries/ # Raw per-library VCFs used for error-rate estimation (`--error_estimate true`)
