@@ -12,6 +12,8 @@ module_order:
   - fastp
   - fastqc
   - trimmomatic
+  - sourmash
+  - kat
   - picard
   - sambamba
   - qualimap
@@ -25,6 +27,7 @@ extra_fn_clean_exts:
   - '.vcf'
   - '.stats'
   - '_discordance'
+  - '.metrics'
 
 # Customize the BCFtools section to clearly separate raw vs filtered VCFs
 bcftools:
